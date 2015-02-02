@@ -436,14 +436,14 @@ void MainWin::setupActions()
     coll = QtUi::actionCollection("Navigation", tr("Navigation"));
 
     coll->addAction("JumpHotBuffer", new Action(tr("Jump to hot chat"), coll,
-            this, SLOT(on_jumpHotBuffer_triggered()), QKeySequence(Qt::META + Qt::Key_A)));
+            this, SLOT(on_jumpHotBuffer_triggered()), QKeySequence(Qt::AltModifier + Qt::Key_A)));
 
     // Jump keys
 #ifdef Q_OS_MAC
     const int bindModifier = Qt::ControlModifier | Qt::AltModifier;
     const int jumpModifier = Qt::ControlModifier;
 #else
-    const int bindModifier = Qt::ControlModifier;
+    const int bindModifier = Qt::ControlModifier | Qt::AltModifier;
     const int jumpModifier = Qt::AltModifier;
 #endif
 
@@ -467,6 +467,26 @@ void MainWin::setupActions()
             QKeySequence(bindModifier + Qt::Key_8)))->setProperty("Index", 8);
     coll->addAction("BindJumpKey9", new Action(tr("Set Quick Access #9"), coll, this, SLOT(bindJumpKey()),
             QKeySequence(bindModifier + Qt::Key_9)))->setProperty("Index", 9);
+    coll->addAction("BindJumpKey10", new Action(tr("Set Quick Access #10"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_Q)))->setProperty("Index", 10);
+    coll->addAction("BindJumpKey11", new Action(tr("Set Quick Access #11"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_W)))->setProperty("Index", 11);
+    coll->addAction("BindJumpKey12", new Action(tr("Set Quick Access #12"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_E)))->setProperty("Index", 12);
+    coll->addAction("BindJumpKey13", new Action(tr("Set Quick Access #13"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_R)))->setProperty("Index", 13);
+    coll->addAction("BindJumpKey14", new Action(tr("Set Quick Access #14"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_T)))->setProperty("Index", 14);
+    coll->addAction("BindJumpKey15", new Action(tr("Set Quick Access #15"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_Y)))->setProperty("Index", 15);
+    coll->addAction("BindJumpKey16", new Action(tr("Set Quick Access #16"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_U)))->setProperty("Index", 16);
+    coll->addAction("BindJumpKey17", new Action(tr("Set Quick Access #17"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_I)))->setProperty("Index", 17);
+    coll->addAction("BindJumpKey18", new Action(tr("Set Quick Access #18"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_O)))->setProperty("Index", 18);
+    coll->addAction("BindJumpKey19", new Action(tr("Set Quick Access #19"), coll, this, SLOT(bindJumpKey()),
+            QKeySequence(bindModifier + Qt::Key_P)))->setProperty("Index", 19);
 
     coll->addAction("JumpKey0", new Action(tr("Quick Access #0"), coll, this, SLOT(onJumpKey()),
             QKeySequence(jumpModifier + Qt::Key_0)))->setProperty("Index", 0);
@@ -488,6 +508,26 @@ void MainWin::setupActions()
             QKeySequence(jumpModifier + Qt::Key_8)))->setProperty("Index", 8);
     coll->addAction("JumpKey9", new Action(tr("Quick Access #9"), coll, this, SLOT(onJumpKey()),
             QKeySequence(jumpModifier + Qt::Key_9)))->setProperty("Index", 9);
+    coll->addAction("JumpKey10", new Action(tr("Quick Access #10"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_Q)))->setProperty("Index", 10);
+    coll->addAction("JumpKey11", new Action(tr("Quick Access #11"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_W)))->setProperty("Index", 11);
+    coll->addAction("JumpKey12", new Action(tr("Quick Access #12"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_E)))->setProperty("Index", 12);
+    coll->addAction("JumpKey13", new Action(tr("Quick Access #13"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_R)))->setProperty("Index", 13);
+    coll->addAction("JumpKey14", new Action(tr("Quick Access #14"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_T)))->setProperty("Index", 14);
+    coll->addAction("JumpKey15", new Action(tr("Quick Access #15"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_Y)))->setProperty("Index", 15);
+    coll->addAction("JumpKey16", new Action(tr("Quick Access #16"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_U)))->setProperty("Index", 16);
+    coll->addAction("JumpKey17", new Action(tr("Quick Access #17"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_I)))->setProperty("Index", 17);
+    coll->addAction("JumpKey18", new Action(tr("Quick Access #18"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_O)))->setProperty("Index", 18);
+    coll->addAction("JumpKey19", new Action(tr("Quick Access #19"), coll, this, SLOT(onJumpKey()),
+            QKeySequence(jumpModifier + Qt::Key_P)))->setProperty("Index", 19);
 
     // Buffer navigation
     coll->addAction("NextBufferView", new Action(QIcon::fromTheme("go-next-view"), tr("Activate Next Chat List"), coll,
