@@ -87,7 +87,7 @@ ContextMenuActionProvider::ContextMenuActionProvider(QObject *parent) : NetworkM
     registerAction(NickKickBan, QIcon::fromTheme("im-ban-kick-user"), tr("Kick && Ban"));
 
     registerAction(HideBufferTemporarily, tr("Hide Chat(s) Temporarily"));
-    registerAction(HideBufferPermanently, tr("Hide Chat(s) Permanently"));
+    // registerAction(HideBufferPermanently, tr("Hide Chat(s) Permanently"));
     registerAction(ShowChannelList, tr("Show Channel List"));
     registerAction(ShowIgnoreList, tr("Show Ignore List"));
 
@@ -303,7 +303,7 @@ void ContextMenuActionProvider::addBufferItemActions(QMenu *menu, const QModelIn
         addHideEventsMenu(menu, bufferInfo.bufferId());
         menu->addSeparator();
         addAction(HideBufferTemporarily, menu, isCustomBufferView);
-        addAction(HideBufferPermanently, menu, isCustomBufferView);
+        // addAction(HideBufferPermanently, menu, isCustomBufferView);
         addAction(BufferRemove, menu, index, InactiveState);
         break;
 
@@ -317,14 +317,14 @@ void ContextMenuActionProvider::addBufferItemActions(QMenu *menu, const QModelIn
         addHideEventsMenu(menu, bufferInfo.bufferId());
         menu->addSeparator();
         addAction(HideBufferTemporarily, menu, isCustomBufferView);
-        addAction(HideBufferPermanently, menu, isCustomBufferView);
+        // addAction(HideBufferPermanently, menu, isCustomBufferView);
         addAction(BufferRemove, menu, index);
         break;
     }
 
     default:
         addAction(HideBufferTemporarily, menu, isCustomBufferView);
-        addAction(HideBufferPermanently, menu, isCustomBufferView);
+        // addAction(HideBufferPermanently, menu, isCustomBufferView);
     }
 }
 
