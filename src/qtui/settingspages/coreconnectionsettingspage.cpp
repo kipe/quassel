@@ -24,13 +24,10 @@ CoreConnectionSettingsPage::CoreConnectionSettingsPage(QWidget *parent)
     : SettingsPage(tr("Remote Cores"), tr("Connection"), parent)
 {
     ui.setupUi(this);
-#ifndef HAVE_KDE4
-    ui.useSolid->hide();
-#endif
 
     initAutoWidgets();
 
-    connect(ui.useSolid, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
+    connect(ui.useQNetworkConfigurationManager, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
     connect(ui.usePingTimeout, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
     connect(ui.useNoTimeout, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
 }
@@ -49,11 +46,7 @@ void CoreConnectionSettingsPage::widgetHasChanged()
 
 void CoreConnectionSettingsPage::defaults()
 {
-#ifdef HAVE_KDE4
-    setRadioButtons(CoreConnectionSettings::UseSolid);
-#else
-    setRadioButtons(CoreConnectionSettings::UsePingTimeout);
-#endif
+    setRadioButtons(CoreConnectionSettings::UseQNetworkConfigurationManager);
 
     SettingsPage::defaults();
 }
@@ -80,11 +73,9 @@ void CoreConnectionSettingsPage::save()
 void CoreConnectionSettingsPage::setRadioButtons(CoreConnectionSettings::NetworkDetectionMode mode)
 {
     switch (mode) {
-#ifdef HAVE_KDE4
-    case CoreConnectionSettings::UseSolid:
-        ui.useSolid->setChecked(true);
+    case CoreConnectionSettings::UseQNetworkConfigurationManager:
+        ui.useQNetworkConfigurationManager->setChecked(true);
         break;
-#endif
     case CoreConnectionSettings::UsePingTimeout:
         ui.usePingTimeout->setChecked(true);
         break;
@@ -96,10 +87,8 @@ void CoreConnectionSettingsPage::setRadioButtons(CoreConnectionSettings::Network
 
 CoreConnectionSettings::NetworkDetectionMode CoreConnectionSettingsPage::modeFromRadioButtons() const
 {
-#ifdef HAVE_KDE4
-    if (ui.useSolid->isChecked())
-        return CoreConnectionSettings::UseSolid;
-#endif
+    if (ui.useQNetworkConfigurationManager->isChecked())
+        return CoreConnectionSettings::UseQNetworkConfigurationManager;
     if (ui.usePingTimeout->isChecked())
         return CoreConnectionSettings::UsePingTimeout;
 

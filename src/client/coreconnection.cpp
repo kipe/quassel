@@ -57,10 +57,8 @@ void CoreConnection::init()
     _reconnectTimer.setSingleShot(true);
     connect(&_reconnectTimer, SIGNAL(timeout()), SLOT(reconnectTimeout()));
 
-#ifdef HAVE_KDE4
-    connect(Solid::Networking::notifier(), SIGNAL(statusChanged(Solid::Networking::Status)),
-        SLOT(solidNetworkStatusChanged(Solid::Networking::Status)));
-#endif
+    _qNetworkConfigurationManager = new QNetworkConfigurationManager(this);
+    connect(_qNetworkConfigurationManager, SIGNAL(onlineStateChanged(bool)), SLOT(onlineStateChanged(bool)));
 
     CoreConnectionSettings s;
     s.initAndNotify("PingTimeoutInterval", this, SLOT(pingTimeoutIntervalChanged(QVariant)), 60);
@@ -127,16 +125,12 @@ void CoreConnection::reconnectTimeout()
     if (!_peer) {
         CoreConnectionSettings s;
         if (_wantReconnect && s.autoReconnect()) {
-#ifdef HAVE_KDE4
-            // If using Solid, we don't want to reconnect if we're offline
-            if (s.networkDetectionMode() == CoreConnectionSettings::UseSolid) {
-                if (Solid::Networking::status() != Solid::Networking::Connected
-                    && Solid::Networking::status() != Solid::Networking::Unknown) {
+            // If using QNetworkConfigurationManager, we don't want to reconnect if we're offline
+            if (s.networkDetectionMode() == CoreConnectionSettings::UseQNetworkConfigurationManager) {
+               if (!_qNetworkConfigurationManager->isOnline()) {
                     return;
-                }
+               }
             }
-#endif /* HAVE_KDE4 */
-
             reconnectToCore();
         }
     }
@@ -169,35 +163,26 @@ void CoreConnection::reconnectIntervalChanged(const QVariant &interval)
 }
 
 
-#ifdef HAVE_KDE4
-
-void CoreConnection::solidNetworkStatusChanged(Solid::Networking::Status status)
+void CoreConnection::onlineStateChanged(bool isOnline)
 {
     CoreConnectionSettings s;
-    if (s.networkDetectionMode() != CoreConnectionSettings::UseSolid)
+    if (s.networkDetectionMode() != CoreConnectionSettings::UseQNetworkConfigurationManager)
         return;
 
-    switch (status) {
-    case Solid::Networking::Unknown:
-    case Solid::Networking::Connected:
-        //qDebug() << "Solid: Network status changed to connected or unknown";
+    if(isOnline) {
+        // qDebug() << "QNetworkConfigurationManager reports Online";
         if (state() == Disconnected) {
             if (_wantReconnect && s.autoReconnect()) {
                 reconnectToCore();
             }
         }
-        break;
-    case Solid::Networking::Disconnecting:
-    case Solid::Networking::Unconnected:
+    } else {
+        // qDebug() << "QNetworkConfigurationManager reports Offline";
         if (state() != Disconnected && !isLocalConnection())
             disconnectFromCore(tr("Network is down"), true);
-        break;
-    default:
-        break;
     }
 }
 
-#endif
 
 bool CoreConnection::isEncrypted() const
 {

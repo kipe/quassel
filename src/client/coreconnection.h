@@ -18,20 +18,16 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CORECONNECTION_H_
-#define CORECONNECTION_H_
+#pragma once
 
-#include "QPointer"
-#include "QTimer"
+#include <QNetworkConfigurationManager>
+#include <QPointer>
+#include <QTimer>
 
 #ifdef HAVE_SSL
 #  include <QSslSocket>
 #else
 #  include <QTcpSocket>
-#endif
-
-#ifdef HAVE_KDE4
-#  include <Solid/Networking>
 #endif
 
 #include "coreaccount.h"
@@ -148,9 +144,7 @@ private slots:
     void reconnectIntervalChanged(const QVariant &interval);
     void reconnectTimeout();
 
-#ifdef HAVE_KDE4
-    void solidNetworkStatusChanged(Solid::Networking::Status status);
-#endif
+    void onlineStateChanged(bool isOnline);
 
 private:
     QPointer<ClientAuthHandler> _authHandler;
@@ -171,6 +165,8 @@ private:
     CoreAccount _account;
     CoreAccountModel *accountModel() const;
 
+    QPointer<QNetworkConfigurationManager> _qNetworkConfigurationManager;
+
     friend class CoreConfigWizard;
 };
 
@@ -186,5 +182,3 @@ inline QString CoreConnection::progressText() const { return _progressText; }
 inline CoreConnection::ConnectionState CoreConnection::state() const { return _state; }
 inline bool CoreConnection::isConnected() const { return state() >= Connected; }
 inline CoreAccount CoreConnection::currentAccount() const { return _account; }
-
-#endif

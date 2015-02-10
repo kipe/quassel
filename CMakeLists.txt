@@ -6,7 +6,6 @@
 # General setup
 #####################################################################
 
-cmake_minimum_required(VERSION 2.8.9)  # You'll need at least 2.8.12 for KDE Frameworks integration
 project(QuasselIRC)
 
 # Versions
@@ -34,11 +33,6 @@ include(FeatureSummary)
 include(QuasselCompileSettings)
 include(QuasselMacros)
 
-# Setting COMPILE_DEFINITIONS_<CONFIG> is deprecated since CMake 3.0 in favor of generator expressions.
-# These have existed since CMake 2.8.10; until we depend on that, we have to explicitly enable the old policy.
-if (CMAKE_MAJOR_VERSION GREATER 2)
-    cmake_policy(SET CMP0043 OLD)
-endif()
 
 # Options and variables that can be set on the command line
 #####################################################################
@@ -119,6 +113,22 @@ if (LINK_EXTRA)
 endif()
 
 
+# Setup CMake
+#####################################################################
+
+if (USE_QT5 AND WITH_KDE)
+    cmake_minimum_required(VERSION 2.8.12)
+else()
+    cmake_minimum_required(VERSION 2.8.9)
+endif()
+
+# Setting COMPILE_DEFINITIONS_<CONFIG> is deprecated since CMake 3.0 in favor of generator expressions.
+# These have existed since CMake 2.8.10; until we depend on that, we have to explicitly enable the old policy.
+if (CMAKE_MAJOR_VERSION GREATER 2)
+    cmake_policy(SET CMP0043 OLD)
+endif()
+
+
 # Simplify later checks
 #####################################################################
 
@@ -139,11 +149,7 @@ if (USE_QT5)
     add_definitions(-DHAVE_QT5)
 else()
     message(STATUS "Building for Qt4...")
-    if (BUILD_GUI)
-        set(QT_MIN_VERSION "4.6.0")
-    else()
-        set(QT_MIN_VERSION "4.4.0")
-    endif()
+    set(QT_MIN_VERSION "4.8.0")
 
     # Select a Qt installation here, if you don't want to use system Qt
     if(QT_PATH)
@@ -256,16 +262,17 @@ if (USE_QT5)
         endif()
 
         if (WITH_KDE)
-            find_package(KF5TextWidgets QUIET)
-            set_package_properties(KF5TextWidgets PROPERTIES TYPE REQUIRED
-                URL "http://inqlude.org/libraries/ktextwidgets.html"
-                DESCRIPTION "framework providing an assortment of widgets for displaying and editing text"
-                PURPOSE     "Allows to use extra features provided by KDE Frameworks in input widgets"
+            find_package(KF5 COMPONENTS ConfigWidgets CoreAddons TextWidgets XmlGui QUIET)
+            set_package_properties(KF5 PROPERTIES TYPE REQUIRED
+                URL "http://www.kde.org"
+                DESCRIPTION "KDE Frameworks"
+                PURPOSE     "Required for integration into the Plasma desktop"
             )
 
         endif()
 
     endif(BUILD_GUI)
+
     if (BUILD_CORE)
         find_package(Qt5Script QUIET)
         set_package_properties(Qt5Script PROPERTIES TYPE REQUIRED
@@ -276,14 +283,12 @@ if (USE_QT5)
             DESCRIPTION "the database support module for Qt5"
         )
 
-        # While QCA2 seems to support Qt5, it is not actually co-installable or distinguishable from the Qt4 version...
-        # In order to avoid linking against the Qt4 version (which is probably the one installed), disable this for now
-        #find_package(QCA2 QUIET)
-        #set_package_properties(QCA2 PROPERTIES TYPE RECOMMENDED
-        #    URL "https://projects.kde.org/projects/kdesupport/qca"
-        #    DESCRIPTION "Qt Cryptographic Architecture"
-        #    PURPOSE "Required for encryption support"
-        #)
+        find_package(QCA2-QT5)
+        set_package_properties(QCA2-QT5 PROPERTIES TYPE RECOMMENDED
+            URL "https://projects.kde.org/projects/kdesupport/qca"
+            DESCRIPTION "Qt Cryptographic Architecture"
+            PURPOSE "Required for encryption support"
+        )
 
     endif(BUILD_CORE)
 
@@ -292,6 +297,7 @@ if (USE_QT5)
                            DESCRIPTION "contains tools for handling translation files"
                            PURPOSE "Required for having translations"
     )
+
     # Some Qt5 versions do not define a target for lconvert, so we need to find it ourselves
     if (Qt5LinguistTools_FOUND)
         if (NOT TARGET Qt5::lconvert AND TARGET Qt5::lrelease)
@@ -422,6 +428,11 @@ if (MINGW AND NOT KDE4_FOUND)
     message(STATUS "Added _WIN32_WINNT=0x0500 definition for MinGW")
     # workaround for bug in mingw gcc 4.0
     add_definitions(-U__STRICT_ANSI__)
+endif()
+
+# Sanitize compiler flags - old versions of KDE set -ansi, which breaks -std=c++11
+if (CMAKE_COMPILER_IS_GNUCXX)
+    string(REPLACE "-ansi" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 endif()
 
 

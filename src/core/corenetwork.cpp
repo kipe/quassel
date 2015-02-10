@@ -232,17 +232,18 @@ void CoreNetwork::disconnectFromIrc(bool requested, const QString &reason, bool 
         _quitReason = reason;
 
     displayMsg(Message::Server, BufferInfo::StatusBuffer, "", tr("Disconnecting. (%1)").arg((!requested && !withReconnect) ? tr("Core Shutdown") : _quitReason));
-    switch (socket.state()) {
-    case QAbstractSocket::ConnectedState:
-        userInputHandler()->issueQuit(_quitReason);
+    if (socket.state() == QAbstractSocket::UnconnectedState) {
+        socketDisconnected();
+    } else {
+        if (socket.state() == QAbstractSocket::ConnectedState) {
+            userInputHandler()->issueQuit(_quitReason);
+        } else {
+            socket.close();
+        }
         if (requested || withReconnect) {
             // the irc server has 10 seconds to close the socket
             _socketCloseTimer.start(10000);
-            break;
         }
-    default:
-        socket.close();
-        socketDisconnected();
     }
 }
 
@@ -416,11 +417,7 @@ void CoreNetwork::socketHasData()
         else if (s.endsWith("\n"))
             s.chop(1);
         NetworkDataEvent *event = new NetworkDataEvent(EventManager::NetworkIncoming, this, s);
-#if QT_VERSION >= 0x040700
         event->setTimestamp(QDateTime::currentDateTimeUtc());
-#else
-        event->setTimestamp(QDateTime::currentDateTime().toUTC());
-#endif
         emit newEvent(event);
     }
 }
@@ -450,17 +447,15 @@ void CoreNetwork::socketInitialized()
         disconnectFromIrc();
         return;
     }
-    
+
     emit socketOpen(identity, localAddress(), localPort(), peerAddress(), peerPort());
-    
+
     Server server = usedServer();
 #ifdef HAVE_SSL
     if (server.useSsl && !socket.isEncrypted())
         return;
 #endif
-#if QT_VERSION >= 0x040600
     socket.setSocketOption(QAbstractSocket::KeepAliveOption, true);
-#endif
 
     emit socketInitialized(identity, localAddress(), localPort(), peerAddress(), peerPort());
 
