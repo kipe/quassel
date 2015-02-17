@@ -39,9 +39,9 @@ void Clickable::activate(NetworkId networkId, const QString &text) const
             str = "http://" + str;
         QDesktopServices::openUrl(QUrl::fromEncoded(str.toUtf8(), QUrl::TolerantMode));
         break;
-    case Clickable::Channel:
-        Client::bufferModel()->switchToOrJoinBuffer(networkId, str);
-        break;
+    // case Clickable::Channel:
+    //     Client::bufferModel()->switchToOrJoinBuffer(networkId, str);
+    //     break;
     default:
         break;
     }
@@ -65,12 +65,12 @@ ClickableList ClickableList::fromString(const QString &str)
 
         // Channel name
         // We don't match for channel names starting with + or &, because that gives us a lot of false positives.
-        QRegExp("((?:#|![A-Z0-9]{5})[^,:\\s]+(?::[^,:\\s]+)?)\\b", Qt::CaseInsensitive)
+        // QRegExp("((?:#|![A-Z0-9]{5})[^,:\\s]+(?::[^,:\\s]+)?)\\b", Qt::CaseInsensitive)
 
         // TODO: Nicks, we'll need a filtering for only matching known nicknames further down if we do this
     };
 
-    static const int regExpCount = 2; // number of regexps in the array above
+    static const int regExpCount = 1; // number of regexps in the array above
 
     qint16 matches[] = { 0, 0, 0 };
     qint16 matchEnd[] = { 0, 0, 0 };
@@ -105,11 +105,11 @@ ClickableList ClickableList::fromString(const QString &str)
                     match.chop(1);
                 }
             }
-            if (type == Clickable::Channel) {
-                // don't make clickable if it could be a #number
-                if (QRegExp("^#\\d+$").exactMatch(match))
-                    continue;
-            }
+            // if (type == Clickable::Channel) {
+            //     // don't make clickable if it could be a #number
+            //     if (QRegExp("^#\\d+$").exactMatch(match))
+            //         continue;
+            // }
             result.append(Clickable((Clickable::Type)type, matches[type], matchEnd[type] - matches[type]));
         }
     }

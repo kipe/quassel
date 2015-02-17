@@ -772,13 +772,13 @@ void ContentsChatItem::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
             onClickable = true;
             showWebPreview(click);
         }
-        else if (click.type() == Clickable::Channel) {
-            QString name = data(ChatLineModel::DisplayRole).toString().mid(click.start(), click.length());
-            // don't make clickable if it's our own name
-            BufferId myId = data(MessageModel::BufferIdRole).value<BufferId>();
-            if (Client::networkModel()->bufferName(myId) != name)
-                onClickable = true;
-        }
+        // else if (click.type() == Clickable::Channel) {
+        //     QString name = data(ChatLineModel::DisplayRole).toString().mid(click.start(), click.length());
+        //     // don't make clickable if it's our own name
+        //     BufferId myId = data(MessageModel::BufferIdRole).value<BufferId>();
+        //     if (Client::networkModel()->bufferName(myId) != name)
+        //         onClickable = true;
+        // }
         if (onClickable) {
             chatLine()->setCursor(Qt::PointingHandCursor);
             privateData()->currentClickable = click;
@@ -801,14 +801,14 @@ void ContentsChatItem::addActionsToMenu(QMenu *menu, const QPointF &pos)
             menu->addAction(QIcon::fromTheme("edit-copy"), tr("Copy Link Address"),
                 &_actionProxy, SLOT(copyLinkToClipboard()))->setData(QVariant::fromValue<void *>(this));
             break;
-        case Clickable::Channel:
-        {
-            // Remove existing menu actions, they confuse us when right-clicking on a clickable
-            menu->clear();
-            QString name = data(ChatLineModel::DisplayRole).toString().mid(click.start(), click.length());
-            GraphicalUi::contextMenuActionProvider()->addActions(menu, chatScene()->filter(), data(MessageModel::BufferIdRole).value<BufferId>(), name);
-            break;
-        }
+        // case Clickable::Channel:
+        // {
+        //     // Remove existing menu actions, they confuse us when right-clicking on a clickable
+        //     menu->clear();
+        //     QString name = data(ChatLineModel::DisplayRole).toString().mid(click.start(), click.length());
+        //     GraphicalUi::contextMenuActionProvider()->addActions(menu, chatScene()->filter(), data(MessageModel::BufferIdRole).value<BufferId>(), name);
+        //     break;
+        // }
         default:
             break;
         }
