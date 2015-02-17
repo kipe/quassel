@@ -25,22 +25,23 @@
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QInputDialog>
 
 #ifdef HAVE_KDE4
-#  include <KAction>
-#  include <KActionCollection>
 #  include <KHelpMenu>
 #  include <KMenuBar>
 #  include <KShortcutsDialog>
 #  include <KStatusBar>
 #  include <KToggleFullScreenAction>
 #  include <KToolBar>
-#  include <KWindowSystem>
 #endif
 
 #ifdef HAVE_KF5
 #  include <KConfigWidgets/KStandardAction>
 #  include <KXmlGui/KHelpMenu>
+#  include <KXmlGui/KShortcutsDialog>
+#  include <KXmlGui/KToolBar>
+#  include <KWidgetsAddons/KToggleFullScreenAction>
 #endif
 
 #ifdef Q_WS_X11
@@ -98,7 +99,7 @@
 #include "topicwidget.h"
 #include "verticaldock.h"
 
-#ifndef HAVE_KDE4
+#ifndef HAVE_KDE
 #  ifdef HAVE_PHONON
 #    include "phononnotificationbackend.h"
 #  endif
@@ -107,9 +108,9 @@
 #  endif
 #  include "systraynotificationbackend.h"
 #  include "taskbarnotificationbackend.h"
-#else /* HAVE_KDE4 */
+#else /* HAVE_KDE */
 #  include "knotificationbackend.h"
-#endif /* HAVE_KDE4 */
+#endif /* HAVE_KDE */
 
 #ifdef HAVE_SSL
 #  include "sslinfodlg.h"
@@ -145,7 +146,7 @@
 #include "settingspages/notificationssettingspage.h"
 #include "settingspages/topicwidgetsettingspage.h"
 
-#ifndef HAVE_KDE4
+#ifndef HAVE_KDE
 #  include "settingspages/shortcutssettingspage.h"
 #endif
 
@@ -196,6 +197,8 @@ void MainWin::init()
     connect(Client::coreConnection(), SIGNAL(handleSslErrors(const QSslSocket *, bool *, bool *)), SLOT(handleSslErrors(const QSslSocket *, bool *, bool *)));
 #endif
 
+    connect(this, SIGNAL(changePassword(QString)), Client::instance(), SLOT(changePassword(QString)));
+
     // Setup Dock Areas
     setDockNestingEnabled(true);
     setCorner(Qt::TopLeftCorner, Qt::LeftDockWidgetArea);
@@ -218,7 +221,7 @@ void MainWin::init()
     setupTitleSetter();
     setupHotList();
 
-#ifndef HAVE_KDE4
+#ifndef HAVE_KDE
 #  ifdef HAVE_PHONON
     QtUi::registerNotificationBackend(new PhononNotificationBackend(this));
 #  endif
@@ -230,9 +233,9 @@ void MainWin::init()
 
     QtUi::registerNotificationBackend(new TaskbarNotificationBackend(this));
 
-#else /* HAVE_KDE4 */
+#else /* HAVE_KDE */
     QtUi::registerNotificationBackend(new KNotificationBackend(this));
-#endif /* HAVE_KDE4 */
+#endif /* HAVE_KDE */
 
 #ifdef HAVE_INDICATEQT
     QtUi::registerNotificationBackend(new IndicatorNotificationBackend(this));
@@ -359,6 +362,8 @@ void MainWin::setupActions()
             this, SLOT(showCoreConnectionDlg())));
     coll->addAction("DisconnectCore", new Action(QIcon::fromTheme("network-disconnect"), tr("&Disconnect from Core"), coll,
             Client::instance(), SLOT(disconnectFromCore())));
+    coll->addAction("ChangePassword", new Action(QIcon::fromTheme("dialog-password"), tr("Change &Password..."), coll,
+            this, SLOT(showChangePasswordDialog())));
     coll->addAction("CoreInfo", new Action(QIcon::fromTheme("help-about"), tr("Core &Info..."), coll,
             this, SLOT(showCoreInfoDlg())));
     coll->addAction("ConfigureNetworks", new Action(QIcon::fromTheme("configure"), tr("Configure &Networks..."), coll,
@@ -385,14 +390,14 @@ void MainWin::setupActions()
     coll->addAction("ToggleStatusBar", new Action(tr("Show Status &Bar"), coll,
             0, 0))->setCheckable(true);
 
-#ifdef HAVE_KDE4
-    QAction *fullScreenAct = KStandardAction::fullScreen(this, SLOT(onFullScreenToggled()), this, coll);
+#ifdef HAVE_KDE
+    _fullScreenAction = KStandardAction::fullScreen(this, SLOT(onFullScreenToggled()), this, coll);
 #else
-    QAction *fullScreenAct = new Action(QIcon::fromTheme("view-fullscreen"), tr("&Full Screen Mode"), coll,
+    _fullScreenAction = new Action(QIcon::fromTheme("view-fullscreen"), tr("&Full Screen Mode"), coll,
         this, SLOT(onFullScreenToggled()), QKeySequence(Qt::Key_F11));
-    fullScreenAct->setCheckable(true);
+    _fullScreenAction->setCheckable(true);
+    coll->addAction("ToggleFullScreen", _fullScreenAction);
 #endif
-    coll->addAction("ToggleFullScreen", fullScreenAct);
 
     // Settings
     QAction *configureShortcutsAct = new Action(QIcon::fromTheme("configure-shortcuts"), tr("Configure &Shortcuts..."), coll,
@@ -552,7 +557,7 @@ void MainWin::setupMenus()
     _fileMenu = menuBar()->addMenu(tr("&File"));
 
     static const QStringList coreActions = QStringList()
-                                           << "ConnectCore" << "DisconnectCore" << "CoreInfo";
+        << "ConnectCore" << "DisconnectCore" << "ChangePassword" << "CoreInfo";
 
     QAction *coreAction;
     foreach(QString actionName, coreActions) {
@@ -586,13 +591,14 @@ void MainWin::setupMenus()
     _viewMenu->addAction(coll->action("LockLayout"));
 
     _settingsMenu = menuBar()->addMenu(tr("&Settings"));
-#ifdef HAVE_KDE4
+#ifdef HAVE_KDE
     _settingsMenu->addAction(KStandardAction::configureNotifications(this, SLOT(showNotificationsDlg()), this));
     _settingsMenu->addAction(KStandardAction::keyBindings(this, SLOT(showShortcutsDlg()), this));
 #else
     _settingsMenu->addAction(coll->action("ConfigureShortcuts"));
 #endif
     _settingsMenu->addAction(coll->action("ConfigureQuassel"));
+
 
     _helpMenu = menuBar()->addMenu(tr("&Help"));
 
@@ -769,6 +775,25 @@ void MainWin::changeActiveBufferView(int bufferViewId)
     }
 
     nextBufferView(); // fallback
+}
+
+
+void MainWin::showChangePasswordDialog()
+{
+    if((Client::coreFeatures() & Quassel::PasswordChange)) {
+        bool ok;
+        QString newPassword = QInputDialog::getText(this, tr("Set Core Password"), tr("New password for your Quassel Core:"), QLineEdit::Password, QString(), &ok);
+        if (ok && !newPassword.isEmpty()) {
+            emit changePassword(newPassword);
+        }
+    }
+    else {
+        QMessageBox box(QMessageBox::Warning, tr("Feature Not Supported"),
+                        tr("<b>Your Quassel Core does not support this feature</b>"),
+                        QMessageBox::Ok, this);
+        box.setInformativeText(tr("You need a Quassel Core v0.12.0 or newer in order to be able to remotely change your password."));
+        box.exec();
+    }
 }
 
 
@@ -962,7 +987,7 @@ void MainWin::setupTopicWidget()
 void MainWin::setupViewMenuTail()
 {
     _viewMenu->addSeparator();
-    _viewMenu->addAction(QtUi::actionCollection("General")->action("ToggleFullScreen"));
+    _viewMenu->addAction(_fullScreenAction);
 }
 
 
@@ -1043,7 +1068,7 @@ void MainWin::setupToolBars()
     setUnifiedTitleAndToolBarOnMac(true);
 #endif
 
-#ifdef HAVE_KDE4
+#ifdef HAVE_KDE
     _mainToolBar = new KToolBar("MainToolBar", this, Qt::TopToolBarArea, false, true, true);
 #else
     _mainToolBar = new QToolBar(this);
@@ -1094,6 +1119,7 @@ void MainWin::setConnectedState()
 
     coll->action("ConnectCore")->setEnabled(false);
     coll->action("DisconnectCore")->setEnabled(true);
+    coll->action("ChangePassword")->setEnabled(true);
     coll->action("CoreInfo")->setEnabled(true);
 
     foreach(QAction *action, _fileMenu->actions()) {
@@ -1210,6 +1236,7 @@ void MainWin::setDisconnectedState()
     coll->action("ConnectCore")->setEnabled(true);
     coll->action("DisconnectCore")->setEnabled(false);
     coll->action("CoreInfo")->setEnabled(false);
+    coll->action("ChangePassword")->setEnabled(false);
     //_viewMenu->setEnabled(false);
     statusBar()->showMessage(tr("Not connected to core."));
     if (_msgProcessorStatusWidget)
@@ -1408,11 +1435,11 @@ void MainWin::showAboutDlg()
 
 void MainWin::showShortcutsDlg()
 {
-#ifdef HAVE_KDE4
+#ifdef HAVE_KDE
     KShortcutsDialog dlg(KShortcutsEditor::AllActions, KShortcutsEditor::LetterShortcutsDisallowed, this);
     foreach(KActionCollection *coll, QtUi::actionCollections())
     dlg.addCollection(coll, coll->property("Category").toString());
-    dlg.exec();
+    dlg.configure(true);
 #else
     SettingsPageDlg dlg(new ShortcutsSettingsPage(QtUi::actionCollections(), this), this);
     dlg.exec();
@@ -1432,15 +1459,10 @@ void MainWin::onFullScreenToggled()
     // Relying on QWidget::isFullScreen is discouraged, see the KToggleFullScreenAction docs
     // Also, one should not use showFullScreen() or showNormal(), as those reset all other window flags
 
-    QAction *action = QtUi::actionCollection("General")->action("ToggleFullScreen");
-    if (!action)
-        return;
-
-#ifdef HAVE_KDE4
-    KToggleFullScreenAction *kAct = static_cast<KToggleFullScreenAction *>(action);
-    kAct->setFullScreen(this, kAct->isChecked());
+#ifdef HAVE_KDE
+    static_cast<KToggleFullScreenAction*>(_fullScreenAction)->setFullScreen(this, _fullScreenAction->isChecked());
 #else
-    if (action->isChecked())
+    if (_fullScreenAction->isChecked())
         setWindowState(windowState() | Qt::WindowFullScreen);
     else
         setWindowState(windowState() & ~Qt::WindowFullScreen);

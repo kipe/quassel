@@ -164,9 +164,12 @@ private slots:
     void changeActiveBufferView(bool backwards);
     void changeActiveBufferView(int bufferViewId);
 
+    void showChangePasswordDialog();
+
 signals:
     void connectToCore(const QVariantMap &connInfo);
     void disconnectFromCore();
+    void changePassword(QString newPassword);
 
 private:
 #ifdef HAVE_KDE
@@ -203,6 +206,7 @@ private:
     ChatMonitorView *_chatMonitorView;
     TopicWidget *_topicWidget;
 
+    QAction *_fullScreenAction;
     QMenu *_fileMenu, *_networksMenu, *_viewMenu, *_bufferViewsMenu, *_settingsMenu, *_helpMenu, *_helpDebugMenu;
     QMenu *_toolbarMenu;
     QToolBar *_mainToolBar, *_chatViewToolBar, *_nickToolBar;

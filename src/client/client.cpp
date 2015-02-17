@@ -48,6 +48,7 @@
 #include "quassel.h"
 #include "signalproxy.h"
 #include "util.h"
+#include "clientauthhandler.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -383,32 +384,39 @@ void Client::setSyncedToCore()
     connect(bufferSyncer(), SIGNAL(buffersPermanentlyMerged(BufferId, BufferId)), _messageModel, SLOT(buffersPermanentlyMerged(BufferId, BufferId)));
     connect(bufferSyncer(), SIGNAL(bufferMarkedAsRead(BufferId)), SIGNAL(bufferMarkedAsRead(BufferId)));
     connect(networkModel(), SIGNAL(requestSetLastSeenMsg(BufferId, MsgId)), bufferSyncer(), SLOT(requestSetLastSeenMsg(BufferId, const MsgId &)));
-    signalProxy()->synchronize(bufferSyncer());
+
+    SignalProxy *p = signalProxy();
+
+    if ((Client::coreFeatures() & Quassel::PasswordChange)) {
+        p->attachSignal(this, SIGNAL(clientChangePassword(QString)));
+    }
+
+    p->synchronize(bufferSyncer());
 
     // create a new BufferViewManager
     Q_ASSERT(!_bufferViewManager);
-    _bufferViewManager = new ClientBufferViewManager(signalProxy(), this);
+    _bufferViewManager = new ClientBufferViewManager(p, this);
     connect(_bufferViewManager, SIGNAL(initDone()), _bufferViewOverlay, SLOT(restore()));
 
     // create AliasManager
     Q_ASSERT(!_aliasManager);
     _aliasManager = new ClientAliasManager(this);
     connect(aliasManager(), SIGNAL(initDone()), SLOT(sendBufferedUserInput()));
-    signalProxy()->synchronize(aliasManager());
+    p->synchronize(aliasManager());
 
     // create NetworkConfig
     Q_ASSERT(!_networkConfig);
     _networkConfig = new NetworkConfig("GlobalNetworkConfig", this);
-    signalProxy()->synchronize(networkConfig());
+    p->synchronize(networkConfig());
 
     // create IgnoreListManager
     Q_ASSERT(!_ignoreListManager);
     _ignoreListManager = new ClientIgnoreListManager(this);
-    signalProxy()->synchronize(ignoreListManager());
+    p->synchronize(ignoreListManager());
 
     Q_ASSERT(!_transferManager);
     _transferManager = new ClientTransferManager(this);
-    signalProxy()->synchronize(transferManager());
+    p->synchronize(transferManager());
 
     // trigger backlog request once all active bufferviews are initialized
     connect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(requestInitialBacklog()));
@@ -643,6 +651,14 @@ void Client::markBufferAsRead(BufferId id)
 {
     if (bufferSyncer() && id.isValid())
         bufferSyncer()->requestMarkBufferAsRead(id);
+}
+
+void Client::changePassword(QString newPassword) {
+    CoreAccount account = currentCoreAccount();
+    account.setPassword(newPassword);
+    coreAccountModel()->createOrUpdateAccount(account);
+    coreAccountModel()->save();
+    emit clientChangePassword(newPassword);
 }
 
 
