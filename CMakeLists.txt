@@ -12,7 +12,7 @@ project(QuasselIRC)
 set(QUASSEL_MAJOR  0)
 set(QUASSEL_MINOR 12)
 set(QUASSEL_PATCH  0)
-set(QUASSEL_VERSION_STRING "0.12-pre")
+set(QUASSEL_VERSION_STRING "0.12-beta1")
 
 # Tell CMake about or own modules
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
@@ -562,6 +562,17 @@ endif()
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_HEAD)
 git_describe(GIT_DESCRIBE --long)
+
+# If not in a Git repo try to read GIT_HEAD and GIT_DESCRIBE from
+# enviroment
+if (NOT GIT_HEAD OR NOT GIT_DESCRIBE)
+  if (DEFINED ENV{GIT_HEAD})
+      set(GIT_HEAD ${GIT_HEAD}) 
+  endif ()
+  if (DEFINED ENV{GIT_DESCRIBE})
+     set(GIT_DESCRIBE ${GIT_DESCRIBE})
+  endif()
+endif()
 
 # Sanitize things if we're not in a Git repo
 if (NOT GIT_HEAD OR NOT GIT_DESCRIBE)
