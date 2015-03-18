@@ -311,7 +311,7 @@ void BufferItem::updateActivityLevel(const Message &msg)
     if (msg.type() & (Message::Plain | Message::Notice | Message::Action))
         _activity |= BufferInfo::NewMessage;
 
-    if (msg.flags() & Message::Highlight)
+    if (msg.flags() & Message::Highlight || msg.bufferInfo().type() == BufferInfo::QueryBuffer)
         _activity |= BufferInfo::Highlight;
 
     stateChanged |= (oldLevel != _activity);
