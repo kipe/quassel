@@ -12,7 +12,7 @@ project(QuasselIRC)
 set(QUASSEL_MAJOR  0)
 set(QUASSEL_MINOR 12)
 set(QUASSEL_PATCH  0)
-set(QUASSEL_VERSION_STRING "0.12-beta1")
+set(QUASSEL_VERSION_STRING "0.12-rc1")
 
 # Tell CMake about or own modules
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
@@ -262,7 +262,7 @@ if (USE_QT5)
         endif()
 
         if (WITH_KDE)
-            find_package(KF5 COMPONENTS ConfigWidgets CoreAddons Notifications NotifyConfig TextWidgets XmlGui QUIET)
+            find_package(KF5 COMPONENTS ConfigWidgets CoreAddons Notifications NotifyConfig TextWidgets WidgetsAddons XmlGui QUIET)
             set_package_properties(KF5 PROPERTIES TYPE REQUIRED
                 URL "http://www.kde.org"
                 DESCRIPTION "KDE Frameworks"
@@ -567,7 +567,7 @@ git_describe(GIT_DESCRIBE --long)
 # enviroment
 if (NOT GIT_HEAD OR NOT GIT_DESCRIBE)
   if (DEFINED ENV{GIT_HEAD})
-      set(GIT_HEAD ${GIT_HEAD}) 
+      set(GIT_HEAD ${GIT_HEAD})
   endif ()
   if (DEFINED ENV{GIT_DESCRIBE})
      set(GIT_DESCRIBE ${GIT_DESCRIBE})

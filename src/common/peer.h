@@ -35,6 +35,7 @@ class Peer : public QObject
 public:
     Peer(AuthHandler *authHandler, QObject *parent = 0);
 
+    virtual Protocol::Type protocol() const = 0;
     virtual QString description() const = 0;
 
     virtual SignalProxy *signalProxy() const = 0;
@@ -85,6 +86,9 @@ private:
 // We need to special-case Peer* in attached signals/slots, so typedef it for the meta type system
 typedef Peer * PeerPtr;
 Q_DECLARE_METATYPE(PeerPtr)
+
+QDataStream &operator<<(QDataStream &out, PeerPtr ptr);
+QDataStream &operator>>(QDataStream &in, PeerPtr &ptr);
 
 
 // Template method needed in the header
