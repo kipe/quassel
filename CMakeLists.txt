@@ -10,9 +10,12 @@ project(QuasselIRC)
 
 # Versions
 set(QUASSEL_MAJOR  0)
-set(QUASSEL_MINOR 12)
+set(QUASSEL_MINOR 13)
 set(QUASSEL_PATCH  0)
-set(QUASSEL_VERSION_STRING "0.12-rc1")
+set(QUASSEL_VERSION_STRING "0.13-pre")
+
+# We want to know CMake's version for debug reasons
+message(STATUS "Using CMake ${CMAKE_VERSION}")
 
 # Tell CMake about or own modules
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
