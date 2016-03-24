@@ -43,18 +43,19 @@ public:
 
 public slots:
     void showWidget(bool visible);
+    void setVisible(bool visible) override;
 
 signals:
     void nickSelectionChanged(const QModelIndexList &);
 
 protected:
-    virtual QSize sizeHint() const;
-    virtual void hideEvent(QHideEvent *);
-    virtual void showEvent(QShowEvent *);
+    QSize sizeHint() const override;
+    void hideEvent(QHideEvent *) override;
+    void showEvent(QShowEvent *) override;
 
 protected slots:
-    virtual void currentChanged(const QModelIndex &current, const QModelIndex &previous);
-    virtual void rowsAboutToBeRemoved(const QModelIndex &parent, int start, int end);
+    void currentChanged(const QModelIndex &current, const QModelIndex &previous) override;
+    void rowsAboutToBeRemoved(const QModelIndex &parent, int start, int end) override;
 
 private slots:
     void removeBuffer(BufferId bufferId);

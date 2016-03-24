@@ -27,7 +27,16 @@ ClientTransfer::ClientTransfer(const QUuid &uuid, QObject *parent)
     : Transfer(uuid, parent),
     _file(0)
 {
-    connect(this, SIGNAL(stateChanged(State)), SLOT(onStateChanged(State)));
+    connect(this, SIGNAL(statusChanged(Transfer::Status)), SLOT(onStatusChanged(Transfer::Status)));
+}
+
+
+quint64 ClientTransfer::transferred() const
+{
+    if (status() == Status::Completed)
+        return fileSize();
+
+    return _file ? _file->size() : 0;
 }
 
 
@@ -82,17 +91,19 @@ void ClientTransfer::dataReceived(PeerPtr, const QByteArray &data)
         qWarning() << Q_FUNC_INFO << "Could not write to file:" << _file->errorString();
         return;
     }
+
+    emit transferredChanged(transferred());
 }
 
 
-void ClientTransfer::onStateChanged(Transfer::State state)
+void ClientTransfer::onStatusChanged(Transfer::Status status)
 {
-    switch(state) {
-        case Completed:
+    switch(status) {
+        case Status::Completed:
             if (_file)
                 _file->close();
             break;
-        case Failed:
+        case Status::Failed:
             if (_file)
                 _file->remove();
             break;

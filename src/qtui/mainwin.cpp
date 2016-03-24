@@ -153,6 +153,11 @@
 #  include "settingspages/shortcutssettingspage.h"
 #endif
 
+#ifdef HAVE_SONNET
+#  include "settingspages/sonnetsettingspage.h"
+#endif
+
+
 MainWin::MainWin(QWidget *parent)
 #ifdef HAVE_KDE
     : KMainWindow(parent), _kHelpMenu(new KHelpMenu(this)),
@@ -919,6 +924,8 @@ void MainWin::setupNickWidget()
     // attach the NickListWidget to the BufferModel and the default selection
     _nickListWidget->setModel(Client::bufferModel());
     _nickListWidget->setSelectionModel(Client::bufferModel()->standardSelectionModel());
+
+    _nickListWidget->setVisible(false);
 }
 
 
@@ -1171,7 +1178,7 @@ void MainWin::loadLayout()
         _layoutLoaded = true;
         return;
     }
-
+    _nickListWidget->setVisible(true);
     restoreState(state, accountId);
     int bufferViewId = s.value(QString("ActiveBufferView-%1").arg(accountId), -1).toInt();
     if (bufferViewId >= 0)
@@ -1241,6 +1248,7 @@ void MainWin::setDisconnectedState()
         _msgProcessorStatusWidget->setProgress(0, 0);
     updateIcon();
     systemTray()->setState(SystemTray::Passive);
+    _nickListWidget->setVisible(false);
 }
 
 
@@ -1404,6 +1412,9 @@ void MainWin::showSettingsDlg()
     dlg->registerSettingsPage(new BufferViewSettingsPage(dlg));
     dlg->registerSettingsPage(new InputWidgetSettingsPage(dlg));
     dlg->registerSettingsPage(new TopicWidgetSettingsPage(dlg));
+#ifdef HAVE_SONNET
+    dlg->registerSettingsPage(new SonnetSettingsPage(dlg));
+#endif
     dlg->registerSettingsPage(new HighlightSettingsPage(dlg));
     dlg->registerSettingsPage(new NotificationsSettingsPage(dlg));
     dlg->registerSettingsPage(new BacklogSettingsPage(dlg));
