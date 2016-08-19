@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2015 by the Quassel Project                        *
+ *   Copyright (C) 2005-2016 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -26,18 +26,18 @@
 #include <QDockWidget>
 #include <QModelIndex>
 #include <QStyledItemDelegate>
-#include <QTreeView>
 #include <QPointer>
 
 #include "actioncollection.h"
 #include "bufferviewconfig.h"
 #include "networkmodel.h"
+#include "treeviewtouch.h"
 #include "types.h"
 
 /*****************************************
  * The TreeView showing the Buffers
  *****************************************/
-class BufferView : public QTreeView
+class BufferView : public TreeViewTouch
 {
     Q_OBJECT
 

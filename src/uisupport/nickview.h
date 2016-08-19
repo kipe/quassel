@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2015 by the Quassel Project                        *
+ *   Copyright (C) 2005-2016 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -24,8 +24,9 @@
 #include <QTreeView>
 
 #include "bufferinfo.h"
+#include "treeviewtouch.h"
 
-class NickView : public QTreeView
+class NickView : public TreeViewTouch
 {
     Q_OBJECT
 

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2015 by the Quassel Project                        *
+ *   Copyright (C) 2005-2016 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -142,6 +142,15 @@ void IrcUser::setRealName(const QString &realName)
     if (!realName.isEmpty() && _realName != realName) {
         _realName = realName;
         SYNC(ARG(realName))
+    }
+}
+
+
+void IrcUser::setAccount(const QString &account)
+{
+    if (_account != account) {
+        _account = account;
+        SYNC(ARG(account))
     }
 }
 

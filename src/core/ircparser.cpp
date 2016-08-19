@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2015 by the Quassel Project                        *
+ *   Copyright (C) 2005-2016 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -280,10 +280,13 @@ void IrcParser::processNetworkIncoming(NetworkDataEvent *e)
 
     case EventManager::IrcEventAway:
         {
+            // Update hostmask info first.  This will create the nick if it doesn't exist, e.g.
+            // away-notify data being sent before JOIN messages.
+            net->updateNickFromMask(prefix);
+            // Separate nick in order to separate server and user decoding
             QString nick = nickFromMask(prefix);
             decParams << nick;
             decParams << (params.count() >= 1 ? net->userDecode(nick, params.at(0)) : QString());
-            net->updateNickFromMask(prefix);
         }
         break;
 

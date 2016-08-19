@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2015 by the Quassel Project                        *
+ *   Copyright (C) 2005-2016 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -101,6 +101,9 @@
 #include "verticaldock.h"
 
 #ifndef HAVE_KDE
+#  ifdef HAVE_QTMULTIMEDIA
+#    include "qtmultimedianotificationbackend.h"
+#  endif
 #  ifdef HAVE_PHONON
 #    include "phononnotificationbackend.h"
 #  endif
@@ -228,6 +231,9 @@ void MainWin::init()
     setupHotList();
 
 #ifndef HAVE_KDE
+#  ifdef HAVE_QTMULTIMEDIA
+    QtUi::registerNotificationBackend(new QtMultimediaNotificationBackend(this));
+#  endif
 #  ifdef HAVE_PHONON
     QtUi::registerNotificationBackend(new PhononNotificationBackend(this));
 #  endif
@@ -1112,7 +1118,7 @@ void MainWin::connectedToCore()
     connect(Client::bufferViewManager(), SIGNAL(bufferViewConfigDeleted(int)), this, SLOT(removeBufferView(int)));
     connect(Client::bufferViewManager(), SIGNAL(initDone()), this, SLOT(loadLayout()));
 
-    connect(Client::transferManager(), SIGNAL(transferAdded(const ClientTransfer*)), SLOT(showNewTransferDlg(const ClientTransfer*)));
+    connect(Client::transferManager(), SIGNAL(transferAdded(QUuid)), SLOT(showNewTransferDlg(QUuid)));
 
     setConnectedState();
 }
@@ -1456,10 +1462,16 @@ void MainWin::showShortcutsDlg()
 }
 
 
-void MainWin::showNewTransferDlg(const ClientTransfer *transfer)
+void MainWin::showNewTransferDlg(const QUuid &transferId)
 {
-    ReceiveFileDlg *dlg = new ReceiveFileDlg(transfer, this);
-    dlg->show();
+    auto transfer = Client::transferManager()->transfer(transferId);
+    if (transfer) {
+        ReceiveFileDlg *dlg = new ReceiveFileDlg(transfer, this);
+        dlg->show();
+    }
+    else {
+        qWarning() << "Unknown transfer ID" << transferId;
+    }
 }
 
 
