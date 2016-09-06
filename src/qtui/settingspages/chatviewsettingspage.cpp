@@ -20,7 +20,6 @@
 
 #include "chatviewsettingspage.h"
 #include "client.h"
-#include "colorbutton.h"
 #include "qtui.h"
 #include "qtuistyle.h"
 
@@ -29,7 +28,7 @@ ChatViewSettingsPage::ChatViewSettingsPage(QWidget *parent)
 {
     ui.setupUi(this);
 
-#ifndef HAVE_WEBKIT
+#if !defined HAVE_WEBKIT && !defined HAVE_WEBENGINE
     ui.showWebPreview->hide();
     ui.showWebPreview->setEnabled(false);
 #endif
@@ -47,7 +46,9 @@ ChatViewSettingsPage::ChatViewSettingsPage(QWidget *parent)
 
 void ChatViewSettingsPage::save()
 {
+    // Save the general settings
     SettingsPage::save();
+    // Update the stylesheet in case fonts are changed
     QtUi::style()->generateSettingsQss();
     QtUi::style()->reload();
 }

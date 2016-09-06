@@ -18,25 +18,27 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef WEBPREVIEWITEM_H
-#define WEBPREVIEWITEM_H
+#include "chatviewcolorsettingspage.h"
 
-#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
+#include "client.h"
+#include "colorbutton.h"
+#include "qtui.h"
+#include "qtuistyle.h"
 
-#include <QGraphicsItem>
-
-class WebPreviewItem : public QGraphicsItem
+ChatViewColorSettingsPage::ChatViewColorSettingsPage(QWidget *parent) :
+    SettingsPage(tr("Interface"), tr("Chat View Colors"), parent)
 {
-public:
-    WebPreviewItem(const QUrl &url);
-    virtual void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
-    virtual inline QRectF boundingRect() const { return _boundingRect; }
+    ui.setupUi(this);
 
-private:
-    QRectF _boundingRect;
-};
+    initAutoWidgets();
+}
 
 
-#endif //#ifdef HAVE_WEBKIT || HAVE_WEBENGINE
-
-#endif //WEBPREVIEWITEM_H
+void ChatViewColorSettingsPage::save()
+{
+    // Save the general settings
+    SettingsPage::save();
+    // Update the stylesheet in case colors are changed
+    QtUi::style()->generateSettingsQss();
+    QtUi::style()->reload();
+}

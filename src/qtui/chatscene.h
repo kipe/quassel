@@ -149,7 +149,7 @@ public slots:
 
     void requestBacklog();
 
-#ifdef HAVE_WEBKIT
+#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
     void loadWebPreview(ChatItem *parentItem, const QUrl &url, const QRectF &urlRect);
     void clearWebPreview(ChatItem *parentItem = 0);
 #endif
@@ -175,10 +175,29 @@ protected slots:
 private slots:
     void firstHandlePositionChanged(qreal xpos);
     void secondHandlePositionChanged(qreal xpos);
-#ifdef HAVE_WEBKIT
+#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
     void webPreviewNextStep();
 #endif
     void showWebPreviewChanged();
+
+    /**
+     * Updates the local setting cache of whether or not to show sender brackets
+     */
+    void showSenderBracketsChanged();
+
+    /**
+     * Updates the local setting cache of the timestamp format string
+     */
+    void timestampFormatStringChanged();
+
+    /**
+     * Updates the status of whether or not the timestamp format string contains brackets
+     *
+     * When the timestamp contains brackets -and- showSenderBrackets is disabled, we need to
+     * automatically add brackets.  This function checks if the timestamp has brackets and stores
+     * the result, rather than checking each time text is copied.
+     */
+    void updateTimestampHasBrackets();
 
     void rowsRemoved();
 
@@ -226,9 +245,14 @@ private:
 
     bool _showWebPreview;
 
+    bool _showSenderBrackets;  /// If true, show brackets around sender names
+
+    QString _timestampFormatString; /// Format of the timestamp string
+    bool _timestampHasBrackets;     /// If true, timestamp format has [brackets] of some sort
+
     static const int _webSearchSelectionTextMaxVisible = 24;
 
-#ifdef HAVE_WEBKIT
+#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
     struct WebPreview {
         enum PreviewState {
             NoPreview,
@@ -246,7 +270,7 @@ private:
         WebPreview() : parentItem(0), previewItem(0), previewState(NoPreview) {}
     };
     WebPreview webPreview;
-#endif // HAVE_WEBKIT
+#endif // HAVE_WEBKIT || HAVE_WEBENGINE
 };
 
 

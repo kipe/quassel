@@ -18,25 +18,45 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef WEBPREVIEWITEM_H
-#define WEBPREVIEWITEM_H
+#pragma once
 
-#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
+#include "settingspage.h"
+#include "ui_chatviewcolorsettingspage.h"
 
-#include <QGraphicsItem>
+class ColorButton;
 
-class WebPreviewItem : public QGraphicsItem
+class ChatViewColorSettingsPage : public SettingsPage
 {
+    Q_OBJECT
+
 public:
-    WebPreviewItem(const QUrl &url);
-    virtual void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
-    virtual inline QRectF boundingRect() const { return _boundingRect; }
+    /**
+     * Construct and initialize the ChatViewColorSettingsPage
+     *
+     * @param parent Parent QWidget object, such as the settings dialog
+     */
+    explicit ChatViewColorSettingsPage(QWidget *parent = 0);
+
+    /**
+     * Gets whether or not this settings page has defaults
+     *
+     * @return True if defaults available, otherwise false
+     */
+    inline bool hasDefaults() const { return true; }
+
+public slots:
+    /**
+     * Save and apply current settings
+     */
+    void save();
 
 private:
-    QRectF _boundingRect;
+    Ui::ChatViewColorSettingsPage ui;  /// Reference to the Qt settings page UI
+
+    /**
+     * Gets the settings path for configuration values
+     *
+     * @return QString pointing to settings group and key for configuration values
+     */
+    inline QString settingsKey() const { return QString("QtUi/ChatView/__default__"); }
 };
-
-
-#endif //#ifdef HAVE_WEBKIT || HAVE_WEBENGINE
-
-#endif //WEBPREVIEWITEM_H

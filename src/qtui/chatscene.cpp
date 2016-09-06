@@ -36,7 +36,9 @@
 #  include <QMenuBar>
 #endif
 
-#ifdef HAVE_WEBKIT
+#ifdef HAVE_WEBENGINE
+#  include <QWebEngineView>
+#elif defined HAVE_WEBKIT
 #  include <QWebView>
 #endif
 
@@ -122,12 +124,19 @@ ChatScene::ChatScene(QAbstractItemModel *model, const QString &idString, qreal w
         this, SLOT(rowsRemoved()));
     connect(model, SIGNAL(dataChanged(QModelIndex, QModelIndex)), SLOT(dataChanged(QModelIndex, QModelIndex)));
 
-#ifdef HAVE_WEBKIT
+#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
     webPreview.timer.setSingleShot(true);
     connect(&webPreview.timer, SIGNAL(timeout()), this, SLOT(webPreviewNextStep()));
 #endif
     _showWebPreview = defaultSettings.showWebPreview();
     defaultSettings.notify("ShowWebPreview", this, SLOT(showWebPreviewChanged()));
+
+    _showSenderBrackets = defaultSettings.showSenderBrackets();
+    defaultSettings.notify("ShowSenderBrackets", this, SLOT(showSenderBracketsChanged()));
+
+    _timestampFormatString = defaultSettings.timestampFormatString();
+    defaultSettings.notify("TimestampFormat", this, SLOT(timestampFormatStringChanged()));
+    updateTimestampHasBrackets();
 
     _clickTimer.setInterval(QApplication::doubleClickInterval());
     _clickTimer.setSingleShot(true);
@@ -1021,17 +1030,34 @@ QString ChatScene::selection() const
             return QString();
         }
         QString result;
+
         for (int l = start; l <= end; l++) {
-            if (_selectionMinCol == ChatLineModel::TimestampColumn)
-                result += _lines[l]->item(ChatLineModel::TimestampColumn)->data(MessageModel::DisplayRole).toString() + " ";
-            if (_selectionMinCol <= ChatLineModel::SenderColumn) {
-		ChatItem *item = _lines[l]->item(ChatLineModel::SenderColumn);
-                if (item->chatLine()->msgType() == Message::Plain)
-                  result += QString("<%1> ").arg(item->data(MessageModel::DisplayRole).toString());
-		else
-                  result += item->data(MessageModel::DisplayRole).toString() + " ";
+            if (_selectionMinCol == ChatLineModel::TimestampColumn) {
+                ChatItem *item = _lines[l]->item(ChatLineModel::TimestampColumn);
+                if (!_showSenderBrackets && !_timestampHasBrackets) {
+                    // Only re-add brackets if the current timestamp format does not include them
+                    // -and- sender brackets are disabled.  Don't filter on Message::Plain as
+                    // timestamp brackets affect all types of messages.
+                    // Remove any spaces before and after, otherwise it may look weird.
+                    result += QString("[%1] ").arg(item->data(MessageModel::DisplayRole)
+                                                   .toString().trimmed());
+                } else {
+                    result += item->data(MessageModel::DisplayRole).toString() + " ";
+                }
             }
-            result += _lines[l]->item(ChatLineModel::ContentsColumn)->data(MessageModel::DisplayRole).toString() + "\n";
+            if (_selectionMinCol <= ChatLineModel::SenderColumn) {
+                ChatItem *item = _lines[l]->item(ChatLineModel::SenderColumn);
+                if (!_showSenderBrackets && item->chatLine()->msgType() == Message::Plain) {
+                    // Copying to plain-text.  Only re-add the sender brackets if they're normally
+                    // hidden.
+                    result += QString("<%1> ").arg(item->data(MessageModel::DisplayRole)
+                                                   .toString());
+                } else {
+                    result += item->data(MessageModel::DisplayRole).toString() + " ";
+                }
+            }
+            result += _lines[l]->item(ChatLineModel::ContentsColumn)
+                    ->data(MessageModel::DisplayRole).toString() + "\n";
         }
         return result;
     }
@@ -1176,9 +1202,9 @@ void ChatScene::updateSceneRect(const QRectF &rect)
 
 
 // ========================================
-//  Webkit Only stuff
+//  Webkit/WebEngine Only stuff
 // ========================================
-#ifdef HAVE_WEBKIT
+#if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
 void ChatScene::loadWebPreview(ChatItem *parentItem, const QUrl &url, const QRectF &urlRect)
 {
     if (!_showWebPreview)
@@ -1307,8 +1333,47 @@ void ChatScene::clearWebPreview(ChatItem *parentItem)
 //  end of webkit only
 // ========================================
 
+// Local configuration caching
 void ChatScene::showWebPreviewChanged()
 {
     ChatViewSettings settings;
     _showWebPreview = settings.showWebPreview();
+}
+
+void ChatScene::showSenderBracketsChanged()
+{
+    ChatViewSettings settings;
+    _showSenderBrackets = settings.showSenderBrackets();
+}
+
+void ChatScene::timestampFormatStringChanged()
+{
+    ChatViewSettings settings;
+    _timestampFormatString = settings.timestampFormatString();
+    updateTimestampHasBrackets();
+}
+
+void ChatScene::updateTimestampHasBrackets()
+{
+    // Calculate these parameters only as needed, rather than on-demand
+
+    // Does the timestamp format contain brackets?  For example:
+    // Classic: "[hh:mm:ss]"
+    // Modern:  " hh:mm:ss"
+    //
+    // Match groups of any opening or closing brackets - (), {}, [], <>, (>, {], etc:
+    //   ^\s*[({[<].+[)}\]>]\s*$
+    //   [...]    is a character group containing ...
+    //   ^        matches start of string
+    //   \s*      matches any amount of whitespace
+    //   [({[<]   matches (, {, [, or <
+    //   .+       matches one or more characters
+    //   [)}\]>]  matches ), }, ], or >, escaping the ]
+    //   $        matches end of string
+    // Alternatively, if opening and closing brackets must be in pairs, use this:
+    //   (^\s*\(.+\)\s*$)|(^\s*\{.+\}\s*$)|(^\s*\[.+\]\s*$)|(^\s*<.+>\s*$)
+    // Note that '\' must be escaped as '\\'
+    // Helpful interactive website for debugging and explaining:  https://regex101.com/
+    const QRegExp regExpMatchBrackets("^\\s*[({[<].+[)}\\]>]\\s*$");
+    _timestampHasBrackets = regExpMatchBrackets.exactMatch(_timestampFormatString);
 }
