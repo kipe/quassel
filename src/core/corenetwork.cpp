@@ -39,6 +39,7 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     _userInputHandler(new CoreUserInputHandler(this)),
     _autoReconnectCount(0),
     _quitRequested(false),
+    _disconnectExpected(false),
 
     _previousConnectionAttemptFailed(false),
     _lastUsedServerIndex(0),
@@ -71,7 +72,7 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     connect(&_autoReconnectTimer, SIGNAL(timeout()), this, SLOT(doAutoReconnect()));
     connect(&_autoWhoTimer, SIGNAL(timeout()), this, SLOT(sendAutoWho()));
     connect(&_autoWhoCycleTimer, SIGNAL(timeout()), this, SLOT(startAutoWhoCycle()));
-    connect(&_tokenBucketTimer, SIGNAL(timeout()), this, SLOT(fillBucketAndProcessQueue()));
+    connect(&_tokenBucketTimer, SIGNAL(timeout()), this, SLOT(checkTokenBucket()));
 
     connect(&socket, SIGNAL(connected()), this, SLOT(socketInitialized()));
     connect(&socket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(socketError(QAbstractSocket::SocketError)));
@@ -82,6 +83,13 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     connect(&socket, SIGNAL(sslErrors(const QList<QSslError> &)), this, SLOT(sslErrors(const QList<QSslError> &)));
 #endif
     connect(this, SIGNAL(newEvent(Event *)), coreSession()->eventManager(), SLOT(postEvent(Event *)));
+
+    // Custom rate limiting
+    // These react to the user changing settings in the client
+    connect(this, SIGNAL(useCustomMessageRateSet(bool)), SLOT(updateRateLimiting()));
+    connect(this, SIGNAL(messageRateBurstSizeSet(quint32)), SLOT(updateRateLimiting()));
+    connect(this, SIGNAL(messageRateDelaySet(quint32)), SLOT(updateRateLimiting()));
+    connect(this, SIGNAL(unlimitedMessageRateSet(bool)), SLOT(updateRateLimiting()));
 
     // IRCv3 capability handling
     // These react to CAP messages from the server
@@ -98,10 +106,36 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
 
 CoreNetwork::~CoreNetwork()
 {
-    if (connectionState() != Disconnected && connectionState() != Network::Reconnecting)
-        disconnectFromIrc(false);  // clean up, but this does not count as requested disconnect!
+    // Request a proper disconnect, but don't count as user-requested disconnect
+    if (socketConnected()) {
+        // Only try if the socket's fully connected (not initializing or disconnecting).
+        // Force an immediate disconnect, jumping the command queue.  Ensures the proper QUIT is
+        // shown even if other messages are queued.
+        disconnectFromIrc(false, QString(), false, true);
+        // Process the putCmd events that trigger the quit.  Without this, shutting down the core
+        // results in abrubtly closing the socket rather than sending the QUIT as expected.
+        QCoreApplication::processEvents();
+        // Wait briefly for each network to disconnect.  Sometimes it takes a little while to send.
+        if (!forceDisconnect()) {
+            qWarning() << "Timed out quitting network" << networkName() <<
+                          "(user ID " << userId() << ")";
+        }
+    }
     disconnect(&socket, 0, this, 0); // this keeps the socket from triggering events during clean up
     delete _userInputHandler;
+}
+
+
+bool CoreNetwork::forceDisconnect(int msecs)
+{
+    if (socket.state() == QAbstractSocket::UnconnectedState) {
+        // Socket already disconnected.
+        return true;
+    }
+    // Request a socket-level disconnect if not already happened
+    socket.disconnectFromHost();
+    // Return the result of waiting for disconnect; true if successful, otherwise false
+    return socket.waitForDisconnected(msecs);
 }
 
 
@@ -168,7 +202,8 @@ void CoreNetwork::connectToIrc(bool reconnecting)
     _quitReason.clear();
 
     // Reset capability negotiation tracking, also handling server changes during reconnect
-    _capsQueued.clear();
+    _capsQueuedIndividual.clear();
+    _capsQueuedBundled.clear();
     clearCaps();
     _capNegotiationActive = false;
     _capInitialNegotiationEnded = false;
@@ -225,6 +260,8 @@ void CoreNetwork::connectToIrc(bool reconnecting)
 void CoreNetwork::disconnectFromIrc(bool requested, const QString &reason, bool withReconnect,
                                     bool forceImmediate)
 {
+    // Disconnecting from the network, should expect a socket close or error
+    _disconnectExpected = true;
     _quitRequested = requested; // see socketDisconnected();
     if (!withReconnect) {
         _autoReconnectTimer.stop();
@@ -271,12 +308,18 @@ void CoreNetwork::userInput(BufferInfo buf, QString msg)
 
 void CoreNetwork::putRawLine(const QByteArray s, const bool prepend)
 {
-    if (_tokenBucket > 0) {
+    if (_tokenBucket > 0 || (_skipMessageRates && _msgQueue.size() == 0)) {
+        // If there's tokens remaining, ...
+        // Or rate limits don't apply AND no messages are in queue (to prevent out-of-order), ...
+        // Send the message now.
         writeToSocket(s);
     } else {
+        // Otherwise, queue the message for later
         if (prepend) {
+            // Jump to the start, skipping other messages
             _msgQueue.prepend(s);
         } else {
+            // Add to back, waiting in order
             _msgQueue.append(s);
         }
     }
@@ -455,8 +498,10 @@ void CoreNetwork::socketHasData()
 
 void CoreNetwork::socketError(QAbstractSocket::SocketError error)
 {
-    if (_quitRequested && error == QAbstractSocket::RemoteHostClosedError)
+    // Ignore socket closed errors if expected
+    if (_disconnectExpected && error == QAbstractSocket::RemoteHostClosedError) {
         return;
+    }
 
     _previousConnectionAttemptFailed = true;
     qWarning() << qPrintable(tr("Could not connect to %1 (%2)").arg(networkName(), socket.errorString()));
@@ -497,11 +542,15 @@ void CoreNetwork::socketInitialized()
 
     socket.setSocketOption(QAbstractSocket::KeepAliveOption, true);
 
-    // TokenBucket to avoid sending too much at once
-    _messageDelay = 2200;  // this seems to be a safe value (2.2 seconds delay)
-    _burstSize = 5;
-    _tokenBucket = _burstSize; // init with a full bucket
-    _tokenBucketTimer.start(_messageDelay);
+    // Update the TokenBucket, force-enabling unlimited message rates for initial registration and
+    // capability negotiation.  networkInitialized() will call updateRateLimiting() without the
+    // force flag to apply user preferences.  When making changes, ensure that this still happens!
+    // As Quassel waits for CAP ACK/NAK and AUTHENTICATE replies, this shouldn't ever fill the IRC
+    // server receive queue and cause a kill.  "Shouldn't" being the operative word; the real world
+    // is a scary place.
+    updateRateLimiting(true);
+    // Fill up the token bucket as we're connecting from scratch
+    resetTokenBucket();
 
     // Request capabilities as per IRCv3.2 specifications
     // Older servers should ignore this; newer servers won't downgrade to RFC1459
@@ -547,6 +596,8 @@ void CoreNetwork::socketDisconnected()
     setConnected(false);
     emit disconnected(networkId());
     emit socketDisconnected(identityPtr(), localAddress(), localPort(), peerAddress(), peerPort());
+    // Reset disconnect expectations
+    _disconnectExpected = false;
     if (_quitRequested) {
         _quitRequested = false;
         setConnectionState(Network::Disconnected);
@@ -591,7 +642,12 @@ void CoreNetwork::networkInitialized()
 {
     setConnectionState(Network::Initialized);
     setConnected(true);
+    _disconnectExpected = false;
     _quitRequested = false;
+
+    // Update the TokenBucket with specified rate-limiting settings, removing the force-unlimited
+    // flag used for initial registration and capability negotiation.
+    updateRateLimiting();
 
     if (useAutoReconnect()) {
         // reset counter
@@ -881,6 +937,86 @@ void CoreNetwork::setPingInterval(int interval)
     _pingTimer.setInterval(interval * 1000);
 }
 
+
+/******** Custom Rate Limiting ********/
+
+void CoreNetwork::updateRateLimiting(const bool forceUnlimited)
+{
+    // Always reset the delay and token bucket (safe-guard against accidentally starting the timer)
+
+    if (useCustomMessageRate() || forceUnlimited) {
+        // Custom message rates enabled, or chosen by means of forcing unlimited.  Let's go for it!
+
+        _messageDelay = messageRateDelay();
+
+        _burstSize = messageRateBurstSize();
+        if (_burstSize < 1) {
+            qWarning() << "Invalid messageRateBurstSize data, cannot have zero message burst size!"
+                       << _burstSize;
+            // Can't go slower than one message at a time
+            _burstSize = 1;
+        }
+
+        if (_tokenBucket > _burstSize) {
+            // Don't let the token bucket exceed the maximum
+            _tokenBucket = _burstSize;
+            // To fill up the token bucket, use resetRateLimiting().  Don't do that here, otherwise
+            // changing the rate-limit settings while connected to a server will incorrectly reset
+            // the token bucket.
+        }
+
+        // Toggle the timer according to whether or not rate limiting is enabled
+        // If we're here, useCustomMessageRate is true.  Thus, the logic becomes
+        // _skipMessageRates = (useCustomMessageRate && (unlimitedMessageRate || forceUnlimited))
+        // Override user preferences if called with force unlimited
+        _skipMessageRates = (unlimitedMessageRate() || forceUnlimited);
+        if (_skipMessageRates) {
+            // If the message queue already contains messages, they need sent before disabling the
+            // timer.  Set the timer to a rapid pace and let it disable itself.
+            if (_msgQueue.size() > 0) {
+                qDebug() << "Outgoing message queue contains messages while disabling rate "
+                            "limiting.  Sending remaining queued messages...";
+                // Promptly run the timer again to clear the messages.  Rate limiting is disabled,
+                // so nothing should cause this to block.. in theory.  However, don't directly call
+                // fillBucketAndProcessQueue() in order to keep it on a separate thread.
+                //
+                // TODO If testing shows this isn't needed, it can be simplified to a direct call.
+                // Hesitant to change it without a wide variety of situations to verify behavior.
+                _tokenBucketTimer.start(100);
+            } else {
+                // No rate limiting, disable the timer
+                _tokenBucketTimer.stop();
+            }
+        } else {
+            // Rate limiting enabled, enable the timer
+            _tokenBucketTimer.start(_messageDelay);
+        }
+    } else {
+        // Custom message rates disabled.  Go for the default.
+
+        _skipMessageRates = false;   // Enable rate-limiting by default
+        // TokenBucket to avoid sending too much at once
+        _messageDelay = 2200;      // This seems to be a safe value (2.2 seconds delay)
+        _burstSize = 5;            // 5 messages at once
+        if (_tokenBucket > _burstSize) {
+            // Don't let the token bucket exceed the maximum
+            _tokenBucket = _burstSize;
+            // To fill up the token bucket, use resetRateLimiting().  Don't do that here, otherwise
+            // changing the rate-limit settings while connected to a server will incorrectly reset
+            // the token bucket.
+        }
+        // Rate limiting enabled, enable the timer
+        _tokenBucketTimer.start(_messageDelay);
+    }
+}
+
+void CoreNetwork::resetTokenBucket()
+{
+    // Fill up the token bucket to the maximum
+    _tokenBucket = _burstSize;
+}
+
+
 /******** IRCv3 Capability Negotiation ********/
 
 void CoreNetwork::serverCapAdded(const QString &capability)
@@ -955,40 +1091,128 @@ void CoreNetwork::queueCap(const QString &capability)
 {
     // IRCv3 specs all use lowercase capability names
     QString _capLowercase = capability.toLower();
-    if (!_capsQueued.contains(_capLowercase)) {
-        _capsQueued.append(_capLowercase);
+
+    if(capsRequiringConfiguration.contains(_capLowercase)) {
+        // The capability requires additional configuration before being acknowledged (e.g. SASL),
+        // so we should negotiate it separately from all other capabilities.  Otherwise new
+        // capabilities will be requested while still configuring the previous one.
+        if (!_capsQueuedIndividual.contains(_capLowercase)) {
+            _capsQueuedIndividual.append(_capLowercase);
+        }
+    } else {
+        // The capability doesn't need any special configuration, so it should be safe to try
+        // bundling together with others.  "Should" being the imperative word, as IRC servers can do
+        // anything.
+        if (!_capsQueuedBundled.contains(_capLowercase)) {
+            _capsQueuedBundled.append(_capLowercase);
+        }
     }
 }
 
-QString CoreNetwork::takeQueuedCap()
+QString CoreNetwork::takeQueuedCaps()
 {
-    if (!_capsQueued.empty()) {
-        return _capsQueued.takeFirst();
+    // Clear the record of the most recently negotiated capability bundle.  Does nothing if the list
+    // is empty.
+    _capsQueuedLastBundle.clear();
+
+    // First, negotiate all the standalone capabilities that require additional configuration.
+    if (!_capsQueuedIndividual.empty()) {
+        // We have an individual capability available.  Take the first and pass it back.
+        return _capsQueuedIndividual.takeFirst();
+    } else if (!_capsQueuedBundled.empty()) {
+        // We have capabilities available that can be grouped.  Try to fit in as many as within the
+        // maximum length.
+        // See CoreNetwork::maxCapRequestLength
+
+        // Response must have at least one capability regardless of max length for anything to
+        // happen.
+        QString capBundle = _capsQueuedBundled.takeFirst();
+        QString nextCap("");
+        while (!_capsQueuedBundled.empty()) {
+            // As long as capabilities remain, get the next...
+            nextCap = _capsQueuedBundled.first();
+            if ((capBundle.length() + 1 + nextCap.length()) <= maxCapRequestLength) {
+                // [capability + 1 for a space + this new capability] fit within length limits
+                // Add it to formatted list
+                capBundle.append(" " + nextCap);
+                // Add it to most recent bundle of requested capabilities (simplifies retry logic)
+                _capsQueuedLastBundle.append(nextCap);
+                // Then remove it from the queue
+                _capsQueuedBundled.removeFirst();
+            } else {
+                // We've reached the length limit for a single capability request, stop adding more
+                break;
+            }
+        }
+        // Return this space-separated set of capabilities, removing any extra spaces
+        return capBundle.trimmed();
     } else {
+        // No capabilities left to negotiate, return an empty string.
         return QString();
     }
+}
+
+void CoreNetwork::retryCapsIndividually()
+{
+    // The most recent set of capabilities got denied by the IRC server.  As we don't know what got
+    // denied, try each capability individually.
+    if (_capsQueuedLastBundle.empty()) {
+        // No most recently tried capability set, just return.
+        return;
+        // Note: there's little point in retrying individually requested caps during negotiation.
+        // We know the individual capability was the one that failed, and it's not likely it'll
+        // suddenly start working within a few seconds.  'cap-notify' provides a better system for
+        // handling capability removal and addition.
+    }
+
+    // This should be fairly rare, e.g. services restarting during negotiation, so simplicity wins
+    // over efficiency.  If this becomes an issue, implement a binary splicing system instead,
+    // keeping track of which halves of the group fail, dividing the set each time.
+
+    // Add most recently tried capability set to individual list, re-requesting them one at a time
+    _capsQueuedIndividual.append(_capsQueuedLastBundle);
+    // Warn of this issue to explain the slower login.  Servers usually shouldn't trigger this.
+    displayMsg(Message::Server, BufferInfo::StatusBuffer, "",
+               tr("Could not negotiate some capabilities, retrying individually (%1)...")
+               .arg(_capsQueuedLastBundle.join(", ")));
+    // Capabilities are already removed from the capability bundle queue via takeQueuedCaps(), no
+    // need to remove them here.
+    // Clear the most recently tried set to reduce risk that mistakes elsewhere causes retrying
+    // indefinitely.
+    _capsQueuedLastBundle.clear();
 }
 
 void CoreNetwork::beginCapNegotiation()
 {
     // Don't begin negotiation if no capabilities are queued to request
-    if (!capNegotiationInProgress())
+    if (!capNegotiationInProgress()) {
+        // If the server doesn't have any capabilities, but supports CAP LS, continue on with the
+        // normal connection.
+        displayMsg(Message::Server, BufferInfo::StatusBuffer, "", tr("No capabilities available"));
+        endCapNegotiation();
         return;
+    }
 
     _capNegotiationActive = true;
     displayMsg(Message::Server, BufferInfo::StatusBuffer, "",
                tr("Ready to negotiate (found: %1)").arg(caps().join(", ")));
+
+    // Build a list of queued capabilities, starting with individual, then bundled, only adding the
+    // comma separator between the two if needed.
+    QString queuedCapsDisplay =
+            (!_capsQueuedIndividual.empty() ? _capsQueuedIndividual.join(", ") + ", " : "")
+            + _capsQueuedBundled.join(", ");
     displayMsg(Message::Server, BufferInfo::StatusBuffer, "",
-               tr("Negotiating capabilities (requesting: %1)...").arg(_capsQueued.join(", ")));
+               tr("Negotiating capabilities (requesting: %1)...").arg(queuedCapsDisplay));
+
     sendNextCap();
 }
 
 void CoreNetwork::sendNextCap()
 {
     if (capNegotiationInProgress()) {
-        // Request the next capability and remove it from the list
-        // Handle one at a time so one capability failing won't NAK all of 'em
-        putRawLine(serverEncode(QString("CAP REQ :%1").arg(takeQueuedCap())));
+        // Request the next set of capabilities and remove them from the list
+        putRawLine(serverEncode(QString("CAP REQ :%1").arg(takeQueuedCaps())));
     } else {
         // No pending desired capabilities, capability negotiation finished
         // If SASL requested but not available, print a warning
@@ -1002,11 +1226,16 @@ void CoreNetwork::sendNextCap()
             _capNegotiationActive = false;
         }
 
-        // If nick registration is already complete, CAP END is not required
-        if (!_capInitialNegotiationEnded) {
-            putRawLine(serverEncode(QString("CAP END")));
-            _capInitialNegotiationEnded = true;
-        }
+        endCapNegotiation();
+    }
+}
+
+void CoreNetwork::endCapNegotiation()
+{
+    // If nick registration is already complete, CAP END is not required
+    if (!_capInitialNegotiationEnded) {
+        putRawLine(serverEncode(QString("CAP END")));
+        _capInitialNegotiationEnded = true;
     }
 }
 
@@ -1146,12 +1375,30 @@ void CoreNetwork::sslErrors(const QList<QSslError> &sslErrors)
 
 #endif  // HAVE_SSL
 
+void CoreNetwork::checkTokenBucket()
+{
+    if (_skipMessageRates) {
+        if (_msgQueue.size() == 0) {
+            // Message queue emptied; stop the timer and bail out
+            _tokenBucketTimer.stop();
+            return;
+        }
+        // Otherwise, we're emptying the queue, continue on as normal
+    }
+
+    // Process whatever messages are pending
+    fillBucketAndProcessQueue();
+}
+
+
 void CoreNetwork::fillBucketAndProcessQueue()
 {
+    // If there's less tokens than burst size, refill the token bucket by 1
     if (_tokenBucket < _burstSize) {
         _tokenBucket++;
     }
 
+    // As long as there's tokens available and messages remaining, sending messages from the queue
     while (_msgQueue.size() > 0 && _tokenBucket > 0) {
         writeToSocket(_msgQueue.takeFirst());
     }
@@ -1162,7 +1409,10 @@ void CoreNetwork::writeToSocket(const QByteArray &data)
 {
     socket.write(data);
     socket.write("\r\n");
-    _tokenBucket--;
+    if (!_skipMessageRates) {
+        // Only subtract from the token bucket if message rate limiting is enabled
+        _tokenBucket--;
+    }
 }
 
 

@@ -73,8 +73,9 @@ public:
         PasswordChange = 0x0010,
         CapNegotiation = 0x0020,           /// IRCv3 capability negotiation, account tracking
         VerifyServerSSL = 0x0040,          /// IRC server SSL validation
+        CustomRateLimits = 0x0080,         /// IRC server custom message rate limits
 
-        NumFeatures = 0x0040
+        NumFeatures = 0x0080
     };
     Q_DECLARE_FLAGS(Features, Feature)
 
@@ -143,6 +144,16 @@ protected:
     Quassel();
     virtual bool init();
     virtual void quit();
+
+    /**
+     * Requests a reload of relevant runtime configuration.
+     *
+     * Does not reload all configuration, but could catch things such as SSL certificates.  Unless
+     * overridden, simply does nothing.
+     *
+     * @return True if configuration reload successful, otherwise false
+     */
+    virtual bool reloadConfig() { return true; }
 
     inline void setRunMode(RunMode mode);
     inline void setDataDirPaths(const QStringList &paths);

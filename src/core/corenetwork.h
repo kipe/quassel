@@ -101,6 +101,15 @@ public:
     inline quint16 localPort() const { return socket.localPort(); }
     inline quint16 peerPort() const { return socket.peerPort(); }
 
+    /**
+     * Gets whether or not a disconnect was expected.
+     *
+     * Distinguishes desired quits from unexpected disconnections such as socket errors or timeouts.
+     *
+     * @return True if disconnect was requested, otherwise false.
+     */
+    inline bool disconnectExpected() const { return _disconnectExpected; }
+
     QList<QList<QByteArray>> splitMessage(const QString &cmd, const QString &message, std::function<QList<QByteArray>(QString &)> cmdGenerator);
 
     // IRCv3 capability negotiation
@@ -110,7 +119,8 @@ public:
      *
      * @returns True if in progress, otherwise false
      */
-    inline bool capNegotiationInProgress() const { return !_capsQueued.empty(); }
+    inline bool capNegotiationInProgress() const { return (!_capsQueuedIndividual.empty() ||
+                                                           !_capsQueuedBundled.empty()); }
 
     /**
      * Queues a capability to be requested.
@@ -131,10 +141,35 @@ public:
     void beginCapNegotiation();
 
     /**
+     * Ends capability negotiation.
+     *
+     * This won't have effect if other CAP commands are in the command queue before calling this
+     * command.  It should only be called when capability negotiation is complete.
+     */
+    void endCapNegotiation();
+
+    /**
+     * Queues the most recent capability set for retrying individually.
+     *
+     * Retries the most recent bundle of capabilities one at a time instead of as a group, working
+     * around the issue that IRC servers can deny a group of requested capabilities without
+     * indicating which capabilities failed.
+     *
+     * See: http://ircv3.net/specs/core/capability-negotiation-3.1.html
+     *
+     * This does NOT call CoreNetwork::sendNextCap().  Call that when ready afterwards.  Does
+     * nothing if the last capability tried was individual instead of a set.
+     */
+    void retryCapsIndividually();
+
+    /**
      * List of capabilities requiring further core<->server messages to configure.
      *
      * For example, SASL requires the back-and-forth of AUTHENTICATE, so the next capability cannot
      * be immediately sent.
+     *
+     * Any capabilities in this list must call CoreNetwork::sendNextCap() on their own and they will
+     * not be batched together with other capabilities.
      *
      * See: http://ircv3.net/specs/extensions/sasl-3.2.html
      */
@@ -168,6 +203,17 @@ public slots:
      */
     void disconnectFromIrc(bool requested = true, const QString &reason = QString(),
                            bool withReconnect = false, bool forceImmediate = false);
+
+    /**
+     * Forcibly close the IRC server socket, waiting for it to close.
+     *
+     * Call CoreNetwork::disconnectFromIrc() first, allow the event loop to run, then if you need to
+     * be sure the network's disconencted (e.g. clean-up), call this.
+     *
+     * @param msecs  Maximum time to wait for socket to close, in milliseconds.
+     * @return True if socket closes successfully; false if error occurs or timeout reached
+     */
+    bool forceDisconnect(int msecs = 1000);
 
     void userInput(BufferInfo bufferInfo, QString msg);
 
@@ -230,6 +276,40 @@ public slots:
     void setCipherKey(const QString &recipient, const QByteArray &key);
     bool cipherUsesCBC(const QString &target);
 #endif
+
+    // Custom rate limiting (can be connected to signals)
+
+    /**
+     * Update rate limiting according to Network configuration
+     *
+     * Updates the token bucket and message queue timer according to the network configuration, such
+     * as on first load, or after changing settings.
+     *
+     * Calling this will reset any ongoing queue delays.  If messages exist in the queue when rate
+     * limiting is disabled, messages will be quickly sent (100 ms) with new messages queued to send
+     * until the queue is cleared.
+     *
+     * @see Network::useCustomMessageRate()
+     * @see Network::messageRateBurstSize()
+     * @see Network::messageRateDelay()
+     * @see Network::unlimitedMessageRate()
+     *
+     * @param[in] forceUnlimited
+     * @parmblock
+     * If true, override user settings to disable message rate limiting, otherwise apply rate limits
+     * set by the user.  Use with caution and remember to re-enable configured limits when done.
+     * @endparmblock
+     */
+    void updateRateLimiting(const bool forceUnlimited = false);
+
+    /**
+     * Resets the token bucket up to the maximum
+     *
+     * Call this if the connection's been reset after calling updateRateLimiting() if needed.
+     *
+     * @see CoreNetwork::updateRateLimiting()
+     */
+    void resetTokenBucket();
 
     // IRCv3 capability negotiation (can be connected to signals)
 
@@ -344,6 +424,23 @@ private slots:
     void sslErrors(const QList<QSslError> &errors);
 #endif
 
+    /**
+     * Check the message token bucket
+     *
+     * If rate limiting is disabled and the message queue is empty, this disables the token bucket
+     * timer.  Otherwise, a queued message will be sent.
+     *
+     * @see CoreNetwork::fillBucketAndProcessQueue()
+     */
+    void checkTokenBucket();
+
+    /**
+     * Top up token bucket and send as many queued messages as possible
+     *
+     * If there's any room for more tokens, add to the token bucket.  Separately, if there's any
+     * messages to send, send until there's no more tokens or the queue is empty, whichever comes
+     * first.
+     */
     void fillBucketAndProcessQueue();
 
     void writeToSocket(const QByteArray &data);
@@ -372,6 +469,10 @@ private:
     bool _quitRequested;
     QString _quitReason;
 
+    bool _disconnectExpected;  /// If true, connection is quitting, expect a socket close
+    // This avoids logging a spurious RemoteHostClosedError whenever disconnect is called without
+    // specifying a permanent (saved to core session) disconnect.
+
     bool _previousConnectionAttemptFailed;
     int _lastUsedServerIndex;
 
@@ -386,24 +487,48 @@ private:
 
     // Maintain a list of CAPs that are being checked; if empty, negotiation finished
     // See http://ircv3.net/specs/core/capability-negotiation-3.2.html
-    QStringList _capsQueued;           /// Capabilities to be checked
-    bool _capNegotiationActive;        /// Whether or not full capability negotiation was started
+    QStringList _capsQueuedIndividual;  /// Capabilities to check that require one at a time requests
+    QStringList _capsQueuedBundled;     /// Capabilities to check that can be grouped together
+    QStringList _capsQueuedLastBundle;  /// Most recent capability bundle requested (no individuals)
+    // Some capabilities, such as SASL, require follow-up messages to be fully enabled.  These
+    // capabilities should not be grouped with others to avoid requesting new capabilities while the
+    // previous capability is still being set up.
+    // Additionally, IRC servers can choose to send a 'NAK' to any set of requested capabilities.
+    // If this happens, we need a way to retry each capability individually in order to avoid having
+    // one failing capability (e.g. SASL) block all other capabilities.
+
+    bool _capNegotiationActive;         /// Whether or not full capability negotiation was started
     // Avoid displaying repeat "negotiation finished" messages
-    bool _capInitialNegotiationEnded;  /// Whether or not initial capability negotiation finished
+    bool _capInitialNegotiationEnded;   /// Whether or not initial capability negotiation finished
     // Avoid sending repeat "CAP END" replies when registration is already ended
 
     /**
-     * Gets the next capability to request, removing it from the queue.
+     * Gets the next set of capabilities to request, removing them from the queue.
      *
-     * @returns Name of capability to request
+     * May return one or multiple space-separated capabilities, depending on queue.
+     *
+     * @returns Space-separated names of capabilities to request, or empty string if none remain
      */
-    QString takeQueuedCap();
+    QString takeQueuedCaps();
+
+    /**
+     * Maximum length of a single 'CAP REQ' command.
+     *
+     * To be safe, 100 chars.  Higher numbers should be possible; this is following the conservative
+     * minimum number of characters that IRC servers must return in CAP NAK replies.  This also
+     * means CAP NAK replies will contain the full list of denied capabilities.
+     *
+     * See: http://ircv3.net/specs/core/capability-negotiation-3.1.html
+     */
+    const int maxCapRequestLength = 100;
 
     QTimer _tokenBucketTimer;
-    int _messageDelay;      // token refill speed in ms
-    int _burstSize;         // size of the token bucket
-    int _tokenBucket;       // the virtual bucket that holds the tokens
-    QList<QByteArray> _msgQueue;
+    // No need for int type as one cannot travel into the past (at least not yet, Doc)
+    quint32 _messageDelay;       /// Token refill speed in ms
+    quint32 _burstSize;          /// Size of the token bucket
+    quint32 _tokenBucket;        /// The virtual bucket that holds the tokens
+    QList<QByteArray> _msgQueue; /// Queue of messages waiting to be sent
+    bool _skipMessageRates;      /// If true, skip all message rate limits
 
     QString _requestedUserModes; // 2 strings separated by a '-' character. first part are requested modes to add, the second to remove
 
