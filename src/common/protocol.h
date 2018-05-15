@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,12 +18,13 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef PROTOCOL_H_
-#define PROTOCOL_H_
+#pragma once
 
 #include <QByteArray>
 #include <QDateTime>
 #include <QVariantList>
+
+#include "quassel.h"
 
 namespace Protocol {
 
@@ -42,7 +43,7 @@ enum Feature {
 };
 
 
-enum Handler {
+enum class Handler {
     SignalProxy,
     AuthHandler
 };
@@ -51,17 +52,20 @@ enum Handler {
 /*** Handshake, handled by AuthHandler ***/
 
 struct HandshakeMessage {
-    inline Handler handler() const { return AuthHandler; }
+    inline Handler handler() const { return Handler::AuthHandler; }
 };
 
 
 struct RegisterClient : public HandshakeMessage
 {
-    inline RegisterClient(const QString &clientVersion, const QString &buildDate, bool sslSupported = false)
-    : clientVersion(clientVersion)
-    , buildDate(buildDate)
-    , sslSupported(sslSupported) {}
+    inline RegisterClient(Quassel::Features clientFeatures, const QString &clientVersion, const QString &buildDate, bool sslSupported = false)
+        : features(std::move(clientFeatures))
+        , clientVersion(clientVersion)
+        , buildDate(buildDate)
+        , sslSupported(sslSupported)
+    {}
 
+    Quassel::Features features;
     QString clientVersion;
     QString buildDate;
 
@@ -81,16 +85,20 @@ struct ClientDenied : public HandshakeMessage
 
 struct ClientRegistered : public HandshakeMessage
 {
-    inline ClientRegistered(quint32 coreFeatures, bool coreConfigured, const QVariantList &backendInfo, bool sslSupported)
-    : coreFeatures(coreFeatures)
-    , coreConfigured(coreConfigured)
-    , backendInfo(backendInfo)
-    , sslSupported(sslSupported)
+    inline ClientRegistered(Quassel::Features coreFeatures, bool coreConfigured, const QVariantList &backendInfo, const QVariantList &authenticatorInfo, bool sslSupported)
+        : features(std::move(coreFeatures))
+        , coreConfigured(coreConfigured)
+        , backendInfo(backendInfo)
+        , authenticatorInfo(authenticatorInfo)
+        , sslSupported(sslSupported)
     {}
 
-    quint32 coreFeatures;
+    Quassel::Features features;
     bool coreConfigured;
     QVariantList backendInfo; // TODO: abstract this better
+
+    // The authenticatorInfo should be optional!
+    QVariantList authenticatorInfo;
 
     // this is only used by the LegacyProtocol in compat mode
     bool sslSupported;
@@ -99,13 +107,23 @@ struct ClientRegistered : public HandshakeMessage
 
 struct SetupData : public HandshakeMessage
 {
-    inline SetupData(const QString &adminUser, const QString &adminPassword, const QString &backend, const QVariantMap &setupData)
-    : adminUser(adminUser), adminPassword(adminPassword), backend(backend), setupData(setupData) {}
+    inline SetupData(const QString &adminUser, const QString &adminPassword, const QString &backend,
+                     const QVariantMap &setupData, const QString &authenticator = QString(),
+                     const QVariantMap &authSetupData = QVariantMap())
+    : adminUser(adminUser)
+    , adminPassword(adminPassword)
+    , backend(backend)
+    , setupData(setupData)
+    , authenticator(authenticator)
+    , authSetupData(authSetupData)
+    {}
 
     QString adminUser;
     QString adminPassword;
     QString backend;
     QVariantMap setupData;
+    QString authenticator;
+    QVariantMap authSetupData;
 };
 
 
@@ -165,7 +183,7 @@ struct SessionState : public HandshakeMessage
 
 struct SignalProxyMessage
 {
-    inline Handler handler() const { return SignalProxy; }
+    inline Handler handler() const { return Handler::SignalProxy; }
 };
 
 
@@ -231,5 +249,3 @@ struct HeartBeatReply
 
 
 };
-
-#endif

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -43,6 +43,9 @@ ChatMonitorView::ChatMonitorView(ChatMonitorFilter *filter, QWidget *parent)
     _filter(filter)
 {
     scene()->setSenderCutoffMode(ChatScene::CutoffLeft);
+    // The normal message prefixes get replaced by the network and buffer name.  Re-add brackets for
+    // all message types.
+    scene()->setAlwaysBracketSender(true);
     connect(Client::instance(), SIGNAL(coreConnectionStateChanged(bool)), this, SLOT(coreConnectionStateChanged(bool)));
 }
 

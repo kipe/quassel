@@ -2,6 +2,7 @@
 
 set(SOURCES
     abstractsqlstorage.cpp
+    authenticator.cpp
     core.cpp
     corealiasmanager.cpp
     coreapplication.cpp
@@ -12,6 +13,8 @@ set(SOURCES
     corebufferviewconfig.cpp
     corebufferviewmanager.cpp
     corecoreinfo.cpp
+    coredccconfig.cpp
+    corehighlightrulemanager.cpp
     coreidentity.cpp
     coreignorelistmanager.cpp
     coreircchannel.cpp
@@ -33,6 +36,7 @@ set(SOURCES
     oidentdconfiggenerator.cpp
     postgresqlstorage.cpp
     sessionthread.cpp
+    sqlauthenticator.cpp
     sqlitestorage.cpp
     storage.cpp
 
@@ -61,6 +65,13 @@ if (QCA2-QT5_FOUND)
     list(APPEND LIBS ${QCA2-QT5_LIBRARIES})
 endif()
 
+# Build with LDAP if told to do so.
+if(HAVE_LDAP)
+    include_directories(${LDAP_INCLUDE_DIR})
+    set(SOURCES ${SOURCES} ldapauthenticator.cpp)
+    set(MOC_HDRS ${MOC_HDRS} ldapauthenticator.h)
+endif(HAVE_LDAP)
+
 include_directories(${CMAKE_SOURCE_DIR}/src/common)
 
 set(CORE_RCS ${CORE_RCS} ${CMAKE_CURRENT_SOURCE_DIR}/sql.qrc)
@@ -70,3 +81,7 @@ add_library(mod_core STATIC ${SOURCES})
 qt_use_modules(mod_core Core Network Script Sql)
 
 target_link_libraries(mod_core mod_common ${LIBS})
+
+if(HAVE_LDAP)
+    target_link_libraries(mod_core ${LDAP_LIBRARIES})
+endif(HAVE_LDAP)

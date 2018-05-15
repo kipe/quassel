@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -122,8 +122,8 @@ void StyledLabel::setText(const QString &text)
 {
     UiStyle *style = GraphicalUi::uiStyle();
 
-    UiStyle::StyledString sstr = style->styleString(style->mircToInternal(text), UiStyle::PlainMsg);
-    QList<QTextLayout::FormatRange> layoutList = style->toTextLayoutList(sstr.formatList, sstr.plainText.length(), 0);
+    UiStyle::StyledString sstr = style->styleString(style->mircToInternal(text), UiStyle::FormatType::PlainMsg);
+    QList<QTextLayout::FormatRange> layoutList = style->toTextLayoutList(sstr.formatList, sstr.plainText.length(), UiStyle::MessageLabel::None);
 
     // Use default font rather than the style's
     QTextLayout::FormatRange fmtRange;

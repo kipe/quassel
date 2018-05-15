@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -45,13 +45,13 @@ void MarkerLineItem::setChatLine(ChatLine *line)
 
 void MarkerLineItem::styleChanged()
 {
-    _brush = QtUi::style()->brush(UiStyle::MarkerLine);
+    _brush = QtUi::style()->brush(UiStyle::ColorRole::MarkerLine);
 
     // if this is a solid color, we assume 1px because wesurely  don't surely don't want to fill the entire chatline.
     // else, use the height of a single line of text to play around with gradients etc.
     qreal height = 1.;
     if (_brush.style() != Qt::SolidPattern)
-        height = QtUi::style()->fontMetrics(QtUiStyle::PlainMsg, 0)->lineSpacing();
+        height = QtUi::style()->fontMetrics(QtUiStyle::FormatType::PlainMsg, UiStyle::MessageLabel::None)->lineSpacing();
 
     prepareGeometryChange();
     _boundingRect = QRectF(0, 0, scene() ? scene()->width() : 100, height);

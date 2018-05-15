@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -181,6 +181,15 @@ void CoreConnection::onlineStateChanged(bool isOnline)
         if (state() != Disconnected && !isLocalConnection())
             disconnectFromCore(tr("Network is down"), true);
     }
+}
+
+
+QPointer<Peer> CoreConnection::peer() const
+{
+    if (_peer) {
+        return _peer;
+    }
+    return _authHandler ? _authHandler->peer() : nullptr;
 }
 
 
@@ -395,7 +404,7 @@ void CoreConnection::connectToCurrentAccount()
     connect(_authHandler, SIGNAL(errorPopup(QString)), SIGNAL(connectionErrorPopup(QString)), Qt::QueuedConnection);
     connect(_authHandler, SIGNAL(statusMessage(QString)), SIGNAL(connectionMsg(QString)));
     connect(_authHandler, SIGNAL(encrypted(bool)), SIGNAL(encrypted(bool)));
-    connect(_authHandler, SIGNAL(startCoreSetup(QVariantList)), SIGNAL(startCoreSetup(QVariantList)));
+    connect(_authHandler, SIGNAL(startCoreSetup(QVariantList, QVariantList)), SIGNAL(startCoreSetup(QVariantList, QVariantList)));
     connect(_authHandler, SIGNAL(coreSetupFailed(QString)), SIGNAL(coreSetupFailed(QString)));
     connect(_authHandler, SIGNAL(coreSetupSuccessful()), SIGNAL(coreSetupSuccess()));
     connect(_authHandler, SIGNAL(userAuthenticationRequired(CoreAccount*,bool*,QString)), SIGNAL(userAuthenticationRequired(CoreAccount*,bool*,QString)));
@@ -463,9 +472,6 @@ void CoreConnection::onHandshakeComplete(RemotePeer *peer, const Protocol::Sessi
 void CoreConnection::internalSessionStateReceived(const Protocol::SessionState &sessionState)
 {
     updateProgress(100, 100);
-
-    Client::setCoreFeatures(Quassel::features()); // mono connection...
-
     setState(Synchronizing);
     syncToCore(sessionState);
 }

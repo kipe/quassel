@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -24,6 +24,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStatusBar>
+#include <QTableView>
 #include <QToolBar>
 #include <QInputDialog>
 
@@ -98,6 +99,7 @@
 #include "statusnotifieritem.h"
 #include "toolbaractionprovider.h"
 #include "topicwidget.h"
+#include "transfermodel.h"
 #include "verticaldock.h"
 
 #ifndef HAVE_KDE
@@ -144,6 +146,8 @@
 #include "settingspages/connectionsettingspage.h"
 #include "settingspages/coreaccountsettingspage.h"
 #include "settingspages/coreconnectionsettingspage.h"
+#include <settingspages/corehighlightsettingspage.h>
+#include "settingspages/dccsettingspage.h"
 #include "settingspages/highlightsettingspage.h"
 #include "settingspages/identitiessettingspage.h"
 #include "settingspages/ignorelistsettingspage.h"
@@ -199,9 +203,11 @@ void MainWin::init()
     connect(Client::messageModel(), SIGNAL(rowsInserted(const QModelIndex &, int, int)),
         SLOT(messagesInserted(const QModelIndex &, int, int)));
     connect(GraphicalUi::contextMenuActionProvider(), SIGNAL(showChannelList(NetworkId)), SLOT(showChannelList(NetworkId)));
+    connect(Client::instance(), SIGNAL(showChannelList(NetworkId)), SLOT(showChannelList(NetworkId)));
     connect(GraphicalUi::contextMenuActionProvider(), SIGNAL(showIgnoreList(QString)), SLOT(showIgnoreList(QString)));
+    connect(Client::instance(), SIGNAL(showIgnoreList(QString)), SLOT(showIgnoreList(QString)));
 
-    connect(Client::coreConnection(), SIGNAL(startCoreSetup(QVariantList)), SLOT(showCoreConfigWizard(QVariantList)));
+    connect(Client::coreConnection(), SIGNAL(startCoreSetup(QVariantList, QVariantList)), SLOT(showCoreConfigWizard(QVariantList, QVariantList)));
     connect(Client::coreConnection(), SIGNAL(connectionErrorPopup(QString)), SLOT(handleCoreConnectionError(QString)));
     connect(Client::coreConnection(), SIGNAL(userAuthenticationRequired(CoreAccount *, bool *, QString)), SLOT(userAuthenticationRequired(CoreAccount *, bool *, QString)));
     connect(Client::coreConnection(), SIGNAL(handleNoSslInClient(bool *)), SLOT(handleNoSslInClient(bool *)));
@@ -221,16 +227,20 @@ void MainWin::init()
     setupActions();
     setupBufferWidget();
     setupMenus();
-    setupTopicWidget();
-    setupNickWidget();
-    setupInputWidget();
+    // setupTransferWidget(); not ready yet
     setupChatMonitor();
+    setupTopicWidget();
+    setupInputWidget();
+    setupNickWidget();
     setupViewMenuTail();
     setupStatusBar();
     setupToolBars();
     setupSystray();
     setupTitleSetter();
     setupHotList();
+
+    _bufferWidget->setFocusProxy(_inputWidget);
+    _chatMonitorView->setFocusProxy(_inputWidget);
 
 #ifndef HAVE_KDE
 #  ifdef HAVE_QTMULTIMEDIA
@@ -371,7 +381,7 @@ void MainWin::updateIcon()
     if (Client::isConnected())
         icon = QIcon::fromTheme("quassel", QIcon(":/icons/quassel-128.png"));
     else
-        icon = QIcon::fromTheme("quassel-inactive", QIcon(":/icons/quassel-128.png"));
+        icon = QIcon::fromTheme("inactive-quassel", QIcon(":/icons/inactive-quassel.png"));
     setWindowIcon(icon);
     qApp->setWindowIcon(icon);
 }
@@ -381,9 +391,9 @@ void MainWin::setupActions()
 {
     ActionCollection *coll = QtUi::actionCollection("General", tr("General"));
     // File
-    coll->addAction("ConnectCore", new Action(QIcon(":/icons/quassel-128.png"), tr("&Connect to Core..."), coll,
+    coll->addAction("ConnectCore", new Action(QIcon::fromTheme("connect-quassel", QIcon(":/icons/connect-quassel.png")), tr("&Connect to Core..."), coll,
             this, SLOT(showCoreConnectionDlg())));
-    coll->addAction("DisconnectCore", new Action(QIcon(":/icons/quassel-disconnect.png"), tr("&Disconnect from Core"), coll,
+    coll->addAction("DisconnectCore", new Action(QIcon::fromTheme("disconnect-quassel", QIcon(":/icons/disconnect-quassel.png")), tr("&Disconnect from Core"), coll,
             Client::instance(), SLOT(disconnectFromCore())));
     coll->addAction("ChangePassword", new Action(QIcon::fromTheme("dialog-password"), tr("Change &Password..."), coll,
             this, SLOT(showPasswordChangeDlg())));
@@ -687,6 +697,8 @@ void MainWin::addBufferView(ClientBufferViewConfig *config)
 
     Client::bufferModel()->synchronizeView(view);
 
+    dock->setLocked(QtUiSettings().value("LockLayout", false).toBool());
+
     dock->setWidget(view);
     dock->setVisible(_layoutLoaded); // don't show before state has been restored
 
@@ -805,7 +817,7 @@ void MainWin::changeActiveBufferView(int bufferViewId)
 
 void MainWin::showPasswordChangeDlg()
 {
-    if((Client::coreFeatures() & Quassel::PasswordChange)) {
+    if(Client::isCoreFeatureEnabled(Quassel::Feature::PasswordChange)) {
         PasswordChangeDlg dlg(this);
         dlg.exec();
     }
@@ -914,11 +926,26 @@ void MainWin::on_actionLockLayout_toggled(bool lock)
     foreach(VerticalDock *dock, docks) {
         dock->showTitle(!lock);
     }
+
+    QList<NickListDock *> nickdocks = findChildren<NickListDock *>();
+    foreach(NickListDock *nickdock, nickdocks) {
+        nickdock->setLocked(lock);
+    }
+
+    QList<BufferViewDock *> bufferdocks = findChildren<BufferViewDock *>();
+    foreach(BufferViewDock *bufferdock, bufferdocks) {
+        bufferdock->setLocked(lock);
+    }
+
     if (Client::bufferViewManager()) {
         foreach(ClientBufferViewConfig *config, Client::bufferViewManager()->clientBufferViewConfigs()) {
             config->setLocked(lock);
         }
     }
+
+    _mainToolBar->setMovable(!lock);
+    _nickToolBar->setMovable(!lock);
+
     QtUiSettings().setValue("LockLayout", lock);
 }
 
@@ -929,6 +956,7 @@ void MainWin::setupNickWidget()
     NickListDock *nickDock = new NickListDock(tr("Nicks"), this);
     nickDock->setObjectName("NickDock");
     nickDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    nickDock->setLocked(QtUiSettings().value("LockLayout", false).toBool());
 
     _nickListWidget = new NickListWidget(nickDock);
     nickDock->setWidget(_nickListWidget);
@@ -955,7 +983,6 @@ void MainWin::setupChatMonitor()
 
     ChatMonitorFilter *filter = new ChatMonitorFilter(Client::messageModel(), this);
     _chatMonitorView = new ChatMonitorView(filter, this);
-    _chatMonitorView->setFocusProxy(_inputWidget);
     _chatMonitorView->show();
     dock->setWidget(_chatMonitorView);
     dock->hide();
@@ -982,8 +1009,6 @@ void MainWin::setupInputWidget()
     _inputWidget->setModel(Client::bufferModel());
     _inputWidget->setSelectionModel(Client::bufferModel()->standardSelectionModel());
 
-    _bufferWidget->setFocusProxy(_inputWidget);
-
     _inputWidget->inputLine()->installEventFilter(_bufferWidget);
 
     connect(_topicWidget, SIGNAL(switchedPlain()), _bufferWidget, SLOT(setFocus()));
@@ -1005,6 +1030,27 @@ void MainWin::setupTopicWidget()
 
     _viewMenu->addAction(dock->toggleViewAction());
     dock->toggleViewAction()->setText(tr("Show Topic Line"));
+}
+
+
+void MainWin::setupTransferWidget()
+{
+    auto dock = new QDockWidget(tr("Transfers"), this);
+    dock->setObjectName("TransferDock");
+    dock->setAllowedAreas(Qt::TopDockWidgetArea|Qt::BottomDockWidgetArea);
+
+    auto view = new QTableView(dock); // to be replaced by the real thing
+    view->setModel(Client::transferModel());
+    dock->setWidget(view);
+    dock->hide(); // hidden by default
+    addDockWidget(Qt::TopDockWidgetArea, dock, Qt::Vertical);
+
+    auto action = dock->toggleViewAction();
+    action->setText(tr("Show File Transfers"));
+    action->setIcon(QIcon::fromTheme("download"));
+    action->setShortcut(QKeySequence(Qt::Key_F6));
+    QtUi::actionCollection("General")->addAction("ShowTransferWidget", action);
+    _viewMenu->addAction(action);
 }
 
 
@@ -1107,6 +1153,8 @@ void MainWin::setupToolBars()
         _mainToolBar->addAction(coll->action("DisconnectCore"));
     }
 
+    _mainToolBar->setMovable(!QtUiSettings().value("LockLayout", false).toBool());
+
     QtUi::toolBarActionProvider()->addActions(_mainToolBar, ToolBarActionProvider::MainToolBar);
     _toolbarMenu->addAction(_mainToolBar->toggleViewAction());
 
@@ -1119,6 +1167,7 @@ void MainWin::setupToolBars()
     _nickToolBar->setWindowTitle(tr("Nick Toolbar"));
     _nickToolBar->setVisible(false); //default: not visible
     addToolBar(_nickToolBar);
+    _nickToolBar->setMovable(!QtUiSettings().value("LockLayout", false).toBool());
 
     QtUi::toolBarActionProvider()->addActions(_nickToolBar, ToolBarActionProvider::NickToolBar);
     _toolbarMenu->addAction(_nickToolBar->toggleViewAction());
@@ -1150,7 +1199,9 @@ void MainWin::connectedToCore()
     connect(Client::bufferViewManager(), SIGNAL(bufferViewConfigDeleted(int)), this, SLOT(removeBufferView(int)));
     connect(Client::bufferViewManager(), SIGNAL(initDone()), this, SLOT(loadLayout()));
 
-    connect(Client::transferManager(), SIGNAL(transferAdded(QUuid)), SLOT(showNewTransferDlg(QUuid)));
+    if (Client::transferManager()) {
+        connect(Client::transferManager(), SIGNAL(transferAdded(QUuid)), SLOT(showNewTransferDlg(QUuid)));
+    }
 
     setConnectedState();
 }
@@ -1379,9 +1430,9 @@ void MainWin::showCoreConnectionDlg()
 }
 
 
-void MainWin::showCoreConfigWizard(const QVariantList &backends)
+void MainWin::showCoreConfigWizard(const QVariantList &backends, const QVariantList &authenticators)
 {
-    CoreConfigWizard *wizard = new CoreConfigWizard(Client::coreConnection(), backends, this);
+    CoreConfigWizard *wizard = new CoreConfigWizard(Client::coreConnection(), backends, authenticators, this);
 
     wizard->show();
 }
@@ -1455,6 +1506,7 @@ void MainWin::showSettingsDlg()
     dlg->registerSettingsPage(new SonnetSettingsPage(dlg));
 #endif
     dlg->registerSettingsPage(new HighlightSettingsPage(dlg));
+    dlg->registerSettingsPage(new CoreHighlightSettingsPage(dlg));
     dlg->registerSettingsPage(new NotificationsSettingsPage(dlg));
     dlg->registerSettingsPage(new BacklogSettingsPage(dlg));
 
@@ -1464,6 +1516,7 @@ void MainWin::showSettingsDlg()
     dlg->registerSettingsPage(new NetworksSettingsPage(dlg));
     dlg->registerSettingsPage(new AliasesSettingsPage(dlg));
     dlg->registerSettingsPage(new IgnoreListSettingsPage(dlg));
+    // dlg->registerSettingsPage(new DccSettingsPage(dlg)); not ready yet
 
     // Category: Remote Cores
     if (Quassel::runMode() != Quassel::Monolithic) {
@@ -1499,8 +1552,10 @@ void MainWin::showNewTransferDlg(const QUuid &transferId)
 {
     auto transfer = Client::transferManager()->transfer(transferId);
     if (transfer) {
-        ReceiveFileDlg *dlg = new ReceiveFileDlg(transfer, this);
-        dlg->show();
+        if (transfer->status() == Transfer::Status::New) {
+            ReceiveFileDlg *dlg = new ReceiveFileDlg(transfer, this);
+            dlg->show();
+        }
     }
     else {
         qWarning() << "Unknown transfer ID" << transferId;

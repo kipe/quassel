@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -75,7 +75,6 @@ signals:
     void removeBufferPermanently(const QModelIndex &);
 
 protected:
-    virtual void keyPressEvent(QKeyEvent *);
     virtual void dropEvent(QDropEvent *event);
     virtual void rowsInserted(const QModelIndex &parent, int start, int end);
     virtual void wheelEvent(QWheelEvent *);
@@ -93,7 +92,31 @@ private slots:
     void joinChannel(const QModelIndex &index);
     void toggleHeader(bool checked);
 
+    /**
+     * Expand all active networks and collapse inactive ones unless manually changed
+     *
+     * Applies to all networks.  Shouldn't need called except during initialization.
+     */
+    void setExpandedState();
+
+    /**
+     * Save the current display state of the given network
+     *
+     * Tracks expanded or collapsed and active or inactive.
+     *
+     * @see setExpandedState()
+     * @param[in] networkIdx QModelIndex of the root network to store
+     */
     void storeExpandedState(const QModelIndex &networkIdx);
+
+    /**
+     * Set the display state of the given network according to network status and manual changes
+     *
+     * Expands if active or previously expanded, collapses if inactive or previously collapsed.
+     *
+     * @see storeExpandedState()
+     * @param[in] networkIdx QModelIndex of the root network to update
+     */
     void setExpandedState(const QModelIndex &networkIdx);
 
     void on_configChanged();
@@ -145,6 +168,7 @@ public :
     inline BufferView *bufferView() const { return qobject_cast<BufferView *>(widget()); }
     inline bool isActive() const { return _active; }
     void setWidget(QWidget *newWidget);
+    void setLocked(bool locked);
     QWidget *widget() const { return _childWidget; }
 
     void activateFilter();

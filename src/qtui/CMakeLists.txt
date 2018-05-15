@@ -22,6 +22,7 @@ set(SOURCES
     coreconnectdlg.cpp
     coreconnectionstatuswidget.cpp
     coreinfodlg.cpp
+    coresessionwidget.cpp
     debugbufferviewoverlay.cpp
     debugconsole.cpp
     debuglogwidget.cpp
@@ -60,12 +61,14 @@ set(FORMS
     channellistdlg.ui
     chatviewsearchbar.ui
     coreconfigwizardintropage.ui
+    coreconfigwizardauthenticationselectionpage.ui
     coreconfigwizardadminuserpage.ui
     coreconfigwizardstorageselectionpage.ui
     coreconfigwizardsyncpage.ui
     coreconnectauthdlg.ui
     coreconnectionstatuswidget.ui
     coreinfodlg.ui
+    coresessionwidget.ui
     debugbufferviewoverlay.ui
     debugconsole.ui
     debuglogwidget.ui

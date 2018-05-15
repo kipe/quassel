@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -81,6 +81,9 @@ void Transfer::setStatus(Transfer::Status status)
         _status = status;
         SYNC(ARG(status));
         emit statusChanged(status);
+        if (status == Status::Completed || status == Status::Failed) {
+            cleanUp();
+        }
     }
 }
 
@@ -212,7 +215,6 @@ void Transfer::setError(const QString &errorString)
     qWarning() << Q_FUNC_INFO << errorString;
     emit error(errorString);
     setStatus(Status::Failed);
-    cleanUp();
 }
 
 

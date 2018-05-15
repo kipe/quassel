@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,6 +30,13 @@
 #  include "cipher.h"
 #endif
 
+#if QT_VERSION < 0x050000
+// QChar::LineFeed is Qt 5
+static const QChar QCharLF = QChar('\n');
+#else
+static const QChar QCharLF = QChar::LineFeed;
+#endif
+
 CoreUserInputHandler::CoreUserInputHandler(CoreNetwork *parent)
     : CoreBasicHandler(parent)
 {
@@ -54,35 +61,44 @@ void CoreUserInputHandler::handleUserInput(const BufferInfo &bufferInfo, const Q
 // ====================
 //  Public Slots
 // ====================
-void CoreUserInputHandler::handleAway(const BufferInfo &bufferInfo, const QString &msg)
+void CoreUserInputHandler::handleAway(const BufferInfo &bufferInfo, const QString &msg,
+                                      const bool skipFormatting)
 {
     Q_UNUSED(bufferInfo)
     if (msg.startsWith("-all")) {
         if (msg.length() == 4) {
-            coreSession()->globalAway();
+            coreSession()->globalAway(QString(), skipFormatting);
             return;
         }
         Q_ASSERT(msg.length() > 4);
         if (msg[4] == ' ') {
-            coreSession()->globalAway(msg.mid(5));
+            coreSession()->globalAway(msg.mid(5), skipFormatting);
             return;
         }
     }
-    issueAway(msg);
+    issueAway(msg, true /* force away */, skipFormatting);
 }
 
 
-void CoreUserInputHandler::issueAway(const QString &msg, bool autoCheck)
+void CoreUserInputHandler::issueAway(const QString &msg, bool autoCheck, const bool skipFormatting)
 {
     QString awayMsg = msg;
     IrcUser *me = network()->me();
+
+    // Only apply timestamp formatting when requested
+    // This avoids re-processing any existing away message when the core restarts, so chained escape
+    // percent signs won't get down-processed.
+    if (!skipFormatting) {
+        // Apply the timestamp formatting to the away message (if empty, nothing will happen)
+        awayMsg = formatCurrentDateTimeInString(awayMsg);
+    }
 
     // if there is no message supplied we have to check if we are already away or not
     if (autoCheck && msg.isEmpty()) {
         if (me && !me->isAway()) {
             Identity *identity = network()->identityPtr();
             if (identity) {
-                awayMsg = identity->awayReason();
+                awayMsg = formatCurrentDateTimeInString(identity->awayReason());
             }
             if (awayMsg.isEmpty()) {
                 awayMsg = tr("away");
@@ -174,7 +190,8 @@ void CoreUserInputHandler::handleCtcp(const BufferInfo &bufferInfo, const QStrin
 
     // FIXME make this a proper event
     coreNetwork()->coreSession()->ctcpParser()->query(coreNetwork(), nick, ctcpTag, message);
-    emit displayMsg(Message::Action, BufferInfo::StatusBuffer, "", verboseMessage, network()->myNick());
+    emit displayMsg(Message::Action, BufferInfo::StatusBuffer, "", verboseMessage,
+                    network()->myNick(), Message::Flag::Self);
 }
 
 
@@ -437,8 +454,18 @@ void CoreUserInputHandler::handleMe(const BufferInfo &bufferInfo, const QString 
     if (bufferInfo.bufferName().isEmpty() || !bufferInfo.acceptsRegularMessages())
         return;  // server buffer
     // FIXME make this a proper event
-    coreNetwork()->coreSession()->ctcpParser()->query(coreNetwork(), bufferInfo.bufferName(), "ACTION", msg);
-    emit displayMsg(Message::Action, bufferInfo.type(), bufferInfo.bufferName(), msg, network()->myNick(), Message::Self);
+
+    // Split apart messages at line feeds.  The IRC protocol uses those to separate commands, so
+    // they need to be split into multiple messages.
+    QStringList messages = msg.split(QCharLF);
+
+    foreach (auto message, messages) {
+        // Handle each separated message independently
+        coreNetwork()->coreSession()->ctcpParser()->query(coreNetwork(), bufferInfo.bufferName(),
+                                                          "ACTION", message);
+        emit displayMsg(Message::Action, bufferInfo.type(), bufferInfo.bufferName(), message,
+                        network()->myNick(), Message::Self);
+    }
 }
 
 
@@ -449,15 +476,16 @@ void CoreUserInputHandler::handleMode(const BufferInfo &bufferInfo, const QStrin
     QStringList params = msg.split(' ', QString::SkipEmptyParts);
     // if the first argument is neither a channel nor us (user modes are only to oneself) the current buffer is assumed to be the target
     if (!params.isEmpty()) {
+        if (params[0] == "-reset" && params.count() == 1) {
+            network()->resetPersistentModes();
+            emit displayMsg(Message::Info, BufferInfo::StatusBuffer, "",
+                            tr("Your persistent modes have been reset."));
+            return;
+        }
         if (!network()->isChannelName(params[0]) && !network()->isMyNick(params[0]))
             params.prepend(bufferInfo.bufferName());
         if (network()->isMyNick(params[0]) && params.count() == 2)
             network()->updateIssuedModes(params[1]);
-        if (params[0] == "-reset" && params.count() == 1) {
-            // FIXME: give feedback to the user (I don't want to add new strings right now)
-            network()->resetPersistentModes();
-            return;
-        }
     }
 
     // TODO handle correct encoding for buffer modes (channelEncode())
@@ -498,11 +526,19 @@ void CoreUserInputHandler::handleNick(const BufferInfo &bufferInfo, const QStrin
 void CoreUserInputHandler::handleNotice(const BufferInfo &bufferInfo, const QString &msg)
 {
     QString bufferName = msg.section(' ', 0, 0);
-    QString payload = msg.section(' ', 1);
     QList<QByteArray> params;
-    params << serverEncode(bufferName) << channelEncode(bufferInfo.bufferName(), payload);
-    emit putCmd("NOTICE", params);
-    emit displayMsg(Message::Notice, typeByTarget(bufferName), bufferName, payload, network()->myNick(), Message::Self);
+    // Split apart messages at line feeds.  The IRC protocol uses those to separate commands, so
+    // they need to be split into multiple messages.
+    QStringList messages = msg.section(' ', 1).split(QCharLF);
+
+    foreach (auto message, messages) {
+        // Handle each separated message independently
+        params.clear();
+        params << serverEncode(bufferName) << channelEncode(bufferInfo.bufferName(), message);
+        emit putCmd("NOTICE", params);
+        emit displayMsg(Message::Notice, typeByTarget(bufferName), bufferName, message,
+                        network()->myNick(), Message::Self);
+    }
 }
 
 
@@ -565,12 +601,24 @@ void CoreUserInputHandler::handleQuery(const BufferInfo &bufferInfo, const QStri
 {
     Q_UNUSED(bufferInfo)
     QString target = msg.section(' ', 0, 0);
-    QString message = msg.section(' ', 1);
-    if (message.isEmpty())
-        emit displayMsg(Message::Server, BufferInfo::QueryBuffer, target, tr("Starting query with %1").arg(target), network()->myNick(), Message::Self);
-    else
-        emit displayMsg(Message::Plain, BufferInfo::QueryBuffer, target, message, network()->myNick(), Message::Self);
-    handleMsg(bufferInfo, msg);
+    // Split apart messages at line feeds.  The IRC protocol uses those to separate commands, so
+    // they need to be split into multiple messages.
+    QStringList messages = msg.section(' ', 1).split(QCharLF);
+
+    foreach (auto message, messages) {
+        // Handle each separated message independently
+        if (message.isEmpty()) {
+            emit displayMsg(Message::Server, BufferInfo::QueryBuffer, target,
+                            tr("Starting query with %1").arg(target), network()->myNick(),
+                            Message::Self);
+            // handleMsg is a no-op if message is empty
+        } else {
+            emit displayMsg(Message::Plain, BufferInfo::QueryBuffer, target, message,
+                            network()->myNick(), Message::Self);
+            // handleMsg needs the target specified at the beginning of the message
+            handleMsg(bufferInfo, target + " " + message);
+        }
+    }
 }
 
 
@@ -604,12 +652,21 @@ void CoreUserInputHandler::handleSay(const BufferInfo &bufferInfo, const QString
         return channelEncode(target, message);
     };
 
+    // Split apart messages at line feeds.  The IRC protocol uses those to separate commands, so
+    // they need to be split into multiple messages.
+    QStringList messages = msg.split(QCharLF, QString::SkipEmptyParts);
+
+    foreach (auto message, messages) {
+        // Handle each separated message independently
 #ifdef HAVE_QCA2
-    putPrivmsg(bufferInfo.bufferName(), msg, encodeFunc, network()->cipher(bufferInfo.bufferName()));
+        putPrivmsg(bufferInfo.bufferName(), message, encodeFunc,
+                   network()->cipher(bufferInfo.bufferName()));
 #else
-    putPrivmsg(bufferInfo.bufferName(), msg, encodeFunc);
+        putPrivmsg(bufferInfo.bufferName(), message, encodeFunc);
 #endif
-    emit displayMsg(Message::Plain, bufferInfo.type(), bufferInfo.bufferName(), msg, network()->myNick(), Message::Self);
+        emit displayMsg(Message::Plain, bufferInfo.type(), bufferInfo.bufferName(), message,
+                        network()->myNick(), Message::Self);
+    }
 }
 
 

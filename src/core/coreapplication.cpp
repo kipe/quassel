@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -55,6 +55,12 @@ bool CoreApplicationInternal::init()
     Core::instance(); // create and init the core
     _coreCreated = true;
 
+    Quassel::registerReloadHandler([]() {
+        // Currently, only reloading SSL certificates and the sysident cache is supported
+        Core::cacheSysIdent();
+        return Core::reloadCerts();
+    });
+
     if (!Quassel::isOptionSet("norestore"))
         Core::restoreState();
 
@@ -62,27 +68,16 @@ bool CoreApplicationInternal::init()
 }
 
 
-bool CoreApplicationInternal::reloadConfig()
-{
-    if (_coreCreated) {
-        // Currently, only reloading SSL certificates is supported
-        return Core::reloadCerts();
-    } else {
-        return false;
-    }
-}
-
-
 /*****************************************************************************/
 
 CoreApplication::CoreApplication(int &argc, char **argv)
-    : QCoreApplication(argc, argv), Quassel()
+    : QCoreApplication(argc, argv)
 {
 #ifdef Q_OS_MAC
-    disableCrashhandler();
+    Quassel::disableCrashHandler();
 #endif /* Q_OS_MAC */
 
-    setRunMode(Quassel::CoreOnly);
+    Quassel::setRunMode(Quassel::CoreOnly);
     _internal = new CoreApplicationInternal();
 }
 
@@ -90,6 +85,7 @@ CoreApplication::CoreApplication(int &argc, char **argv)
 CoreApplication::~CoreApplication()
 {
     delete _internal;
+    Quassel::destroy();
 }
 
 
@@ -104,14 +100,4 @@ bool CoreApplication::init()
         return true;
     }
     return false;
-}
-
-
-bool CoreApplication::reloadConfig()
-{
-    if (_internal) {
-        return _internal->reloadConfig();
-    } else {
-        return false;
-    }
 }

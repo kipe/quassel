@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -214,12 +214,16 @@ void CoreNetwork::connectToIrc(bool reconnecting)
     }
     else if (_previousConnectionAttemptFailed) {
         // cycle to next server if previous connection attempt failed
+        _previousConnectionAttemptFailed = false;
         displayMsg(Message::Server, BufferInfo::StatusBuffer, "", tr("Connection failed. Cycling to next Server"));
         if (++_lastUsedServerIndex >= serverList().size()) {
             _lastUsedServerIndex = 0;
         }
     }
-    _previousConnectionAttemptFailed = false;
+    else {
+        // Start out with the top server in the list
+        _lastUsedServerIndex = 0;
+    }
 
     Server server = usedServer();
     displayStatusMsg(tr("Connecting to %1:%2...").arg(server.host).arg(server.port));
@@ -237,8 +241,11 @@ void CoreNetwork::connectToIrc(bool reconnecting)
 
     // Qt caches DNS entries for a minute, resulting in round-robin (e.g. for chat.freenode.net) not working if several users
     // connect at a similar time. QHostInfo::fromName(), however, always performs a fresh lookup, overwriting the cache entry.
-    QHostInfo::fromName(server.host);
-
+    if (! server.useProxy) {
+        //Avoid hostname lookups when a proxy is specified. The lookups won't use the proxy and may therefore leak the DNS
+        //hostname of the server. Qt's DNS cache also isn't used by the proxy so we don't need to refresh the entry.
+        QHostInfo::fromName(server.host);
+    }
 #ifdef HAVE_SSL
     if (server.useSsl) {
         CoreIdentity *identity = identityPtr();
@@ -656,8 +663,11 @@ void CoreNetwork::networkInitialized()
 
     // restore away state
     QString awayMsg = Core::awayMessage(userId(), networkId());
-    if (!awayMsg.isEmpty())
-        userInputHandler()->handleAway(BufferInfo(), Core::awayMessage(userId(), networkId()));
+    if (!awayMsg.isEmpty()) {
+        // Don't re-apply any timestamp formatting in order to preserve escaped percent signs, e.g.
+        // '%%%%%%%%' -> '%%%%'  If processed again, it'd result in '%%'.
+        userInputHandler()->handleAway(BufferInfo(), awayMsg, true);
+    }
 
     sendPerform();
 
@@ -942,7 +952,9 @@ void CoreNetwork::setPingInterval(int interval)
 
 void CoreNetwork::updateRateLimiting(const bool forceUnlimited)
 {
-    // Always reset the delay and token bucket (safe-guard against accidentally starting the timer)
+    // Verify and apply custom rate limiting options, always resetting the delay and burst size
+    // (safe-guarding against accidentally starting the timer), but don't reset the token bucket as
+    // this may be called while connected to a server.
 
     if (useCustomMessageRate() || forceUnlimited) {
         // Custom message rates enabled, or chosen by means of forcing unlimited.  Let's go for it!
@@ -966,9 +978,9 @@ void CoreNetwork::updateRateLimiting(const bool forceUnlimited)
         }
 
         // Toggle the timer according to whether or not rate limiting is enabled
-        // If we're here, useCustomMessageRate is true.  Thus, the logic becomes
-        // _skipMessageRates = (useCustomMessageRate && (unlimitedMessageRate || forceUnlimited))
-        // Override user preferences if called with force unlimited
+        // If we're here, either useCustomMessageRate or forceUnlimited is true.  Thus, the logic is
+        // _skipMessageRates = ((useCustomMessageRate && unlimitedMessageRate) || forceUnlimited)
+        // Override user preferences if called with force unlimited, only used during connect.
         _skipMessageRates = (unlimitedMessageRate() || forceUnlimited);
         if (_skipMessageRates) {
             // If the message queue already contains messages, they need sent before disabling the
@@ -994,12 +1006,12 @@ void CoreNetwork::updateRateLimiting(const bool forceUnlimited)
     } else {
         // Custom message rates disabled.  Go for the default.
 
-        _skipMessageRates = false;   // Enable rate-limiting by default
-        // TokenBucket to avoid sending too much at once
-        _messageDelay = 2200;      // This seems to be a safe value (2.2 seconds delay)
-        _burstSize = 5;            // 5 messages at once
+        _skipMessageRates = false;  // Enable rate-limiting by default
+        _messageDelay = 2200;       // This seems to be a safe value (2.2 seconds delay)
+        _burstSize = 5;             // 5 messages at once
         if (_tokenBucket > _burstSize) {
-            // Don't let the token bucket exceed the maximum
+            // TokenBucket to avoid sending too much at once.  Don't let the token bucket exceed the
+            // maximum.
             _tokenBucket = _burstSize;
             // To fill up the token bucket, use resetRateLimiting().  Don't do that here, otherwise
             // changing the rate-limit settings while connected to a server will incorrectly reset
@@ -1051,7 +1063,7 @@ void CoreNetwork::serverCapAcknowledged(const QString &capability)
         // FIXME use event
 #ifdef HAVE_SSL
         if (!identityPtr()->sslCert().isNull()) {
-            if (IrcCap::SaslMech::maybeSupported(capValue(IrcCap::SASL), IrcCap::SaslMech::EXTERNAL)) {
+            if (saslMaybeSupports(IrcCap::SaslMech::EXTERNAL)) {
                 // EXTERNAL authentication supported, send request
                 putRawLine(serverEncode("AUTHENTICATE EXTERNAL"));
             } else {
@@ -1061,7 +1073,7 @@ void CoreNetwork::serverCapAcknowledged(const QString &capability)
             }
         } else {
 #endif
-            if (IrcCap::SaslMech::maybeSupported(capValue(IrcCap::SASL), IrcCap::SaslMech::PLAIN)) {
+            if (saslMaybeSupports(IrcCap::SaslMech::PLAIN)) {
                 // PLAIN authentication supported, send request
                 // Only working with PLAIN atm, blowfish later
                 putRawLine(serverEncode("AUTHENTICATE PLAIN"));
@@ -1198,9 +1210,10 @@ void CoreNetwork::beginCapNegotiation()
                tr("Ready to negotiate (found: %1)").arg(caps().join(", ")));
 
     // Build a list of queued capabilities, starting with individual, then bundled, only adding the
-    // comma separator between the two if needed.
+    // comma separator between the two if needed (both individual and bundled caps exist).
     QString queuedCapsDisplay =
-            (!_capsQueuedIndividual.empty() ? _capsQueuedIndividual.join(", ") + ", " : "")
+            _capsQueuedIndividual.join(", ")
+            + ((!_capsQueuedIndividual.empty() && !_capsQueuedBundled.empty()) ? ", " : "")
             + _capsQueuedBundled.join(", ");
     displayMsg(Message::Server, BufferInfo::StatusBuffer, "",
                tr("Negotiating capabilities (requesting: %1)...").arg(queuedCapsDisplay));

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -24,6 +24,14 @@
 #include "clienttransfer.h"
 
 INIT_SYNCABLE_OBJECT(ClientTransferManager)
+
+void ClientTransferManager::setTransferIds(const QList<QUuid> &transferIds)
+{
+    for(auto &&id : transferIds) {
+        onCoreTransferAdded(id);
+    }
+}
+
 
 void ClientTransferManager::onCoreTransferAdded(const QUuid &uuid)
 {

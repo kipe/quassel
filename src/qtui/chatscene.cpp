@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -75,6 +75,7 @@ ChatScene::ChatScene(QAbstractItemModel *model, const QString &idString, qreal w
     _markerLineValid(false),
     _markerLineJumpPending(false),
     _cutoffMode(CutoffRight),
+    _alwaysBracketSender(false),
     _selectingItem(0),
     _selectionStart(-1),
     _isSelecting(false),
@@ -133,6 +134,9 @@ ChatScene::ChatScene(QAbstractItemModel *model, const QString &idString, qreal w
 
     _showSenderBrackets = defaultSettings.showSenderBrackets();
     defaultSettings.notify("ShowSenderBrackets", this, SLOT(showSenderBracketsChanged()));
+
+    _useCustomTimestampFormat = defaultSettings.useCustomTimestampFormat();
+    defaultSettings.notify("UseCustomTimestampFormat", this, SLOT(useCustomTimestampFormatChanged()));
 
     _timestampFormatString = defaultSettings.timestampFormatString();
     defaultSettings.notify("TimestampFormat", this, SLOT(timestampFormatStringChanged()));
@@ -1047,9 +1051,14 @@ QString ChatScene::selection() const
             }
             if (_selectionMinCol <= ChatLineModel::SenderColumn) {
                 ChatItem *item = _lines[l]->item(ChatLineModel::SenderColumn);
-                if (!_showSenderBrackets && item->chatLine()->msgType() == Message::Plain) {
-                    // Copying to plain-text.  Only re-add the sender brackets if they're normally
-                    // hidden.
+                if (!_showSenderBrackets && (_alwaysBracketSender
+                                             || item->chatLine()->msgType() == Message::Plain)) {
+                    // Copying to plain-text.  Re-add the sender brackets if they're normally hidden
+                    // for...
+                    // * Plain messages
+                    // * All messages in the Chat Monitor
+                    //
+                    // The Chat Monitor sets alwaysBracketSender() to true.
                     result += QString("<%1> ").arg(item->data(MessageModel::DisplayRole)
                                                    .toString());
                 } else {
@@ -1286,7 +1295,8 @@ void ChatScene::webPreviewNextStep()
         qWarning() << "removing preview";
         if (webPreview.previewItem && webPreview.previewItem->scene())
             removeItem(webPreview.previewItem);
-    // Fall through to deletion!
+        // Fall through to deletion!
+        [[clang::fallthrough]];
     case WebPreview::HidePreview:
         if (webPreview.previewItem) {
             delete webPreview.previewItem;
@@ -1313,7 +1323,8 @@ void ChatScene::clearWebPreview(ChatItem *parentItem)
             if (webPreview.previewItem && webPreview.previewItem->scene())
                 removeItem(webPreview.previewItem);
         }
-    // fall through into to set hidden state
+        // fall through into to set hidden state
+        [[clang::fallthrough]];
     case WebPreview::DelayPreview:
         // we're just loading, so haven't shown the preview yet.
         webPreview.previewState = WebPreview::HidePreview;
@@ -1346,6 +1357,13 @@ void ChatScene::showSenderBracketsChanged()
     _showSenderBrackets = settings.showSenderBrackets();
 }
 
+void ChatScene::useCustomTimestampFormatChanged()
+{
+    ChatViewSettings settings;
+    _useCustomTimestampFormat = settings.useCustomTimestampFormat();
+    updateTimestampHasBrackets();
+}
+
 void ChatScene::timestampFormatStringChanged()
 {
     ChatViewSettings settings;
@@ -1357,23 +1375,29 @@ void ChatScene::updateTimestampHasBrackets()
 {
     // Calculate these parameters only as needed, rather than on-demand
 
-    // Does the timestamp format contain brackets?  For example:
-    // Classic: "[hh:mm:ss]"
-    // Modern:  " hh:mm:ss"
-    //
-    // Match groups of any opening or closing brackets - (), {}, [], <>, (>, {], etc:
-    //   ^\s*[({[<].+[)}\]>]\s*$
-    //   [...]    is a character group containing ...
-    //   ^        matches start of string
-    //   \s*      matches any amount of whitespace
-    //   [({[<]   matches (, {, [, or <
-    //   .+       matches one or more characters
-    //   [)}\]>]  matches ), }, ], or >, escaping the ]
-    //   $        matches end of string
-    // Alternatively, if opening and closing brackets must be in pairs, use this:
-    //   (^\s*\(.+\)\s*$)|(^\s*\{.+\}\s*$)|(^\s*\[.+\]\s*$)|(^\s*<.+>\s*$)
-    // Note that '\' must be escaped as '\\'
-    // Helpful interactive website for debugging and explaining:  https://regex101.com/
-    const QRegExp regExpMatchBrackets("^\\s*[({[<].+[)}\\]>]\\s*$");
-    _timestampHasBrackets = regExpMatchBrackets.exactMatch(_timestampFormatString);
+    if (!_useCustomTimestampFormat) {
+        // The default timestamp format string does not have brackets, no need to check.
+        // If UiStyle::updateSystemTimestampFormat() has brackets added, change this, too.
+        _timestampHasBrackets = false;
+    } else {
+        // Does the timestamp format contain brackets?  For example:
+        // Classic: "[hh:mm:ss]"
+        // Modern:  " hh:mm:ss"
+        //
+        // Match groups of any opening or closing brackets - (), {}, [], <>, (>, {], etc:
+        //   ^\s*[({[<].+[)}\]>]\s*$
+        //   [...]    is a character group containing ...
+        //   ^        matches start of string
+        //   \s*      matches any amount of whitespace
+        //   [({[<]   matches (, {, [, or <
+        //   .+       matches one or more characters
+        //   [)}\]>]  matches ), }, ], or >, escaping the ]
+        //   $        matches end of string
+        // Alternatively, if opening and closing brackets must be in pairs, use this:
+        //   (^\s*\(.+\)\s*$)|(^\s*\{.+\}\s*$)|(^\s*\[.+\]\s*$)|(^\s*<.+>\s*$)
+        // Note that '\' must be escaped as '\\'
+        // Helpful interactive website for debugging and explaining:  https://regex101.com/
+        const QRegExp regExpMatchBrackets("^\\s*[({[<].+[)}\\]>]\\s*$");
+        _timestampHasBrackets = regExpMatchBrackets.exactMatch(_timestampFormatString);
+    }
 }

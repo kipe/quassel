@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -27,6 +27,7 @@
 #include "corebuffersyncer.h"
 #include "corebacklogmanager.h"
 #include "corebufferviewmanager.h"
+#include "coredccconfig.h"
 #include "coreeventmanager.h"
 #include "coreidentity.h"
 #include "coreignorelistmanager.h"
@@ -64,6 +65,7 @@ CoreSession::CoreSession(UserId uid, bool restoreState, QObject *parent)
     _bufferSyncer(new CoreBufferSyncer(this)),
     _backlogManager(new CoreBacklogManager(this)),
     _bufferViewManager(new CoreBufferViewManager(_signalProxy, this)),
+    _dccConfig(new CoreDccConfig(this)),
     _ircListHelper(new CoreIrcListHelper(this)),
     _networkConfig(new CoreNetworkConfig("GlobalNetworkConfig", this)),
     _coreInfo(this),
@@ -75,7 +77,8 @@ CoreSession::CoreSession(UserId uid, bool restoreState, QObject *parent)
     _ircParser(new IrcParser(this)),
     scriptEngine(new QScriptEngine(this)),
     _processMessages(false),
-    _ignoreListManager(this)
+    _ignoreListManager(this),
+    _highlightRuleManager(this)
 {
     SignalProxy *p = signalProxy();
     p->setHeartBeatInterval(30);
@@ -103,6 +106,9 @@ CoreSession::CoreSession(UserId uid, bool restoreState, QObject *parent)
     p->attachSlot(SIGNAL(changePassword(PeerPtr,QString,QString,QString)), this, SLOT(changePassword(PeerPtr,QString,QString,QString)));
     p->attachSignal(this, SIGNAL(passwordChanged(PeerPtr,bool)));
 
+    p->attachSlot(SIGNAL(kickClient(int)), this, SLOT(kickClient(int)));
+    p->attachSignal(this, SIGNAL(disconnectFromCore()));
+
     loadSettings();
     initScriptEngine();
 
@@ -121,10 +127,12 @@ CoreSession::CoreSession(UserId uid, bool restoreState, QObject *parent)
     p->synchronize(_bufferSyncer);
     p->synchronize(&aliasManager());
     p->synchronize(_backlogManager);
+    p->synchronize(dccConfig());
     p->synchronize(ircListHelper());
     p->synchronize(networkConfig());
     p->synchronize(&_coreInfo);
     p->synchronize(&_ignoreListManager);
+    p->synchronize(&_highlightRuleManager);
     p->synchronize(transferManager());
     // Restore session state
     if (restoreState)
@@ -311,6 +319,9 @@ void CoreSession::recvMessageFromServer(NetworkId networkId, Message::Type type,
     if (_ignoreListManager.match(rawMsg, networkName) == IgnoreListManager::HardStrictness)
         return;
 
+    if (_highlightRuleManager.match(rawMsg, currentNetwork->myNick(), currentNetwork->identityPtr()->nicks()))
+        rawMsg.flags |= Message::Flag::Highlight;
+
     _messageQueue << rawMsg;
     if (!_processMessages) {
         _processMessages = true;
@@ -363,7 +374,8 @@ void CoreSession::processMessages()
             Q_ASSERT(!createBuffer);
             bufferInfo = Core::bufferInfo(user(), rawMsg.networkId, BufferInfo::StatusBuffer, "");
         }
-        Message msg(bufferInfo, rawMsg.type, rawMsg.text, rawMsg.sender, rawMsg.flags);
+        Message msg(bufferInfo, rawMsg.type, rawMsg.text, rawMsg.sender,
+                    senderPrefixes(rawMsg.sender, bufferInfo), rawMsg.flags);
         if(Core::storeMessage(msg))
             emit displayMsg(msg);
     }
@@ -387,7 +399,8 @@ void CoreSession::processMessages()
                 }
                 bufferInfoCache[rawMsg.networkId][rawMsg.target] = bufferInfo;
             }
-            Message msg(bufferInfo, rawMsg.type, rawMsg.text, rawMsg.sender, rawMsg.flags);
+            Message msg(bufferInfo, rawMsg.type, rawMsg.text, rawMsg.sender,
+                        senderPrefixes(rawMsg.sender, bufferInfo), rawMsg.flags);
             messages << msg;
         }
 
@@ -403,7 +416,8 @@ void CoreSession::processMessages()
                 // add the StatusBuffer to the Cache in case there are more Messages for the original target
                 bufferInfoCache[rawMsg.networkId][rawMsg.target] = bufferInfo;
             }
-            Message msg(bufferInfo, rawMsg.type, rawMsg.text, rawMsg.sender, rawMsg.flags);
+            Message msg(bufferInfo, rawMsg.type, rawMsg.text, rawMsg.sender,
+                        senderPrefixes(rawMsg.sender, bufferInfo), rawMsg.flags);
             messages << msg;
         }
 
@@ -418,6 +432,25 @@ void CoreSession::processMessages()
     _messageQueue.clear();
 }
 
+QString CoreSession::senderPrefixes(const QString &sender, const BufferInfo &bufferInfo) const
+{
+    CoreNetwork *currentNetwork = network(bufferInfo.networkId());
+    if (!currentNetwork) {
+        return {};
+    }
+
+    if (bufferInfo.type() != BufferInfo::ChannelBuffer) {
+        return {};
+    }
+
+    IrcChannel *currentChannel = currentNetwork->ircChannel(bufferInfo.bufferName());
+    if (!currentChannel) {
+        return {};
+    }
+
+    const QString modes = currentChannel->userModes(nickFromMask(sender).toLower());
+    return currentNetwork->modesToPrefixes(modes);
+}
 
 Protocol::SessionState CoreSession::sessionState() const
 {
@@ -475,6 +508,9 @@ void CoreSession::createIdentity(const Identity &identity, const QVariantMap &ad
         createIdentity(coreIdentity);
 }
 
+const QString CoreSession::strictSysident() {
+    return Core::instance()->strictSysIdent(_user);
+}
 
 void CoreSession::createIdentity(const CoreIdentity &identity)
 {
@@ -661,13 +697,14 @@ void CoreSession::clientsDisconnected()
             if (!identity->detachAwayReason().isEmpty())
                 awayReason = identity->detachAwayReason();
             net->setAutoAwayActive(true);
+            // Allow handleAway() to format the current date/time in the string.
             net->userInputHandler()->handleAway(BufferInfo(), awayReason);
         }
     }
 }
 
 
-void CoreSession::globalAway(const QString &msg)
+void CoreSession::globalAway(const QString &msg, const bool skipFormatting)
 {
     QHash<NetworkId, CoreNetwork *>::iterator netIter = _networks.begin();
     CoreNetwork *net = 0;
@@ -678,16 +715,30 @@ void CoreSession::globalAway(const QString &msg)
         if (!net->isConnected())
             continue;
 
-        net->userInputHandler()->issueAway(msg, false /* no force away */);
+        net->userInputHandler()->issueAway(msg, false /* no force away */, skipFormatting);
     }
 }
 
-void CoreSession::changePassword(PeerPtr peer, const QString &userName, const QString &oldPassword, const QString &newPassword)
-{
+void CoreSession::changePassword(PeerPtr peer, const QString &userName, const QString &oldPassword, const QString &newPassword) {
+    Q_UNUSED(peer);
+
     bool success = false;
     UserId uid = Core::validateUser(userName, oldPassword);
     if (uid.isValid() && uid == user())
         success = Core::changeUserPassword(uid, newPassword);
 
-    emit passwordChanged(peer, success);
+    signalProxy()->restrictTargetPeers(signalProxy()->sourcePeer(), [&]{
+        emit passwordChanged(nullptr, success);
+    });
+}
+
+void CoreSession::kickClient(int peerId) {
+    auto peer = signalProxy()->peerById(peerId);
+    if (peer == nullptr) {
+        qWarning() << "Invalid peer Id: " << peerId;
+        return;
+    }
+    signalProxy()->restrictTargetPeers(peer, [&]{
+        emit disconnectFromCore();
+    });
 }

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -82,6 +82,20 @@ public:
      * @param[in] versionMinor New minor version number
      */
     virtual void setVersionMinor(const uint versionMinor);
+
+    /**
+     * Persist unsaved changes to permanent storage
+     *
+     * @return true if succeeded, false otherwise
+     */
+    bool sync();
+
+    /**
+     * Check if the configuration storage is writable.
+     *
+     * @return true if writable, false otherwise
+     */
+    bool isWritable();
 
 protected:
     inline Settings(QString group_, QString appName_) : group(group_), appName(appName_) {}

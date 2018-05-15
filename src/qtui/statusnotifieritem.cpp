@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This contains code from KStatusNotifierItem, part of the KDE libs     *
@@ -242,7 +242,7 @@ QString StatusNotifierItem::title() const
 QString StatusNotifierItem::iconName() const
 {
     if (state() == Passive)
-        return QString("quassel-inactive");
+        return QString("inactive-quassel");
     else
         return QString("quassel");
 }
@@ -251,7 +251,7 @@ QString StatusNotifierItem::iconName() const
 QString StatusNotifierItem::attentionIconName() const
 {
     if (animationEnabled())
-        return QString("quassel-message");
+        return QString("message-quassel");
     else
         return QString("quassel");
 }

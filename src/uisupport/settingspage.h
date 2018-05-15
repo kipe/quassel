@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -73,6 +73,13 @@ public:
      *  visible if disconnected, and care about disabling it yourself.
      */
     inline virtual bool needsCoreConnection() const { return false; }
+
+    /**
+     * Whether the settingspage should be selectable or not, in a given situation
+     * Used for pages that should only be visible if certain features are available (or not).
+     * @return
+     */
+    inline virtual bool isSelectable() const { return true; }
 
     //! The key this settings page stores its values under
     /** This needs to be overriden to enable automatic loading/saving/hasChanged checking of widgets.

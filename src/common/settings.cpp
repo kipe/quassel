@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -120,6 +120,21 @@ void Settings::setVersionMinor(const uint versionMinor)
     s.setValue("Config/VersionMinor", versionMinor);
 }
 
+bool Settings::sync() {
+    create_qsettings;
+    s.sync();
+    switch (s.status()) {
+        case QSettings::NoError:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool Settings::isWritable() {
+    create_qsettings;
+    return s.isWritable();
+}
 
 QStringList Settings::allLocalKeys()
 {

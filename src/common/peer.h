@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,8 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef PEER_H
-#define PEER_H
+#pragma once
 
 #include <QAbstractSocket>
 #include <QDataStream>
@@ -27,6 +26,7 @@
 
 #include "authhandler.h"
 #include "protocol.h"
+#include "quassel.h"
 #include "signalproxy.h"
 
 class Peer : public QObject
@@ -34,13 +34,29 @@ class Peer : public QObject
     Q_OBJECT
 
 public:
-    Peer(AuthHandler *authHandler, QObject *parent = 0);
+    explicit Peer(AuthHandler *authHandler, QObject *parent = 0);
 
     virtual Protocol::Type protocol() const = 0;
     virtual QString description() const = 0;
 
     virtual SignalProxy *signalProxy() const = 0;
     virtual void setSignalProxy(SignalProxy *proxy) = 0;
+
+    QDateTime connectedSince() const;
+    void setConnectedSince(const QDateTime &connectedSince);
+
+    QString buildDate() const;
+    void setBuildDate(const QString &buildDate);
+
+    QString clientVersion() const;
+    void setClientVersion(const QString &clientVersion);
+
+    bool hasFeature(Quassel::Feature feature) const;
+    Quassel::Features features() const;
+    void setFeatures(Quassel::Features features);
+
+    int id() const;
+    void setId(int id);
 
     AuthHandler *authHandler() const;
 
@@ -49,6 +65,9 @@ public:
     virtual bool isLocal() const = 0;
 
     virtual int lag() const = 0;
+
+    virtual QString address() const = 0;
+    virtual quint16 port() const = 0;
 
 public slots:
     /* Handshake messages */
@@ -82,6 +101,14 @@ protected:
 
 private:
     QPointer<AuthHandler> _authHandler;
+
+    QDateTime _connectedSince;
+
+    QString _buildDate;
+    QString _clientVersion;
+    Quassel::Features _features;
+
+    int _id = -1;
 };
 
 // We need to special-case Peer* in attached signals/slots, so typedef it for the meta type system
@@ -97,7 +124,7 @@ template<typename T> inline
 void Peer::handle(const T &protoMessage)
 {
     switch(protoMessage.handler()) {
-        case Protocol::SignalProxy:
+        case Protocol::Handler::SignalProxy:
             if (!signalProxy()) {
                 qWarning() << Q_FUNC_INFO << "Cannot handle message without a SignalProxy!";
                 return;
@@ -105,7 +132,7 @@ void Peer::handle(const T &protoMessage)
             signalProxy()->handle(this, protoMessage);
             break;
 
-        case Protocol::AuthHandler:
+        case Protocol::Handler::AuthHandler:
             if (!authHandler()) {
                 qWarning() << Q_FUNC_INFO << "Cannot handle auth messages without an active AuthHandler!";
                 return;
@@ -118,5 +145,3 @@ void Peer::handle(const T &protoMessage)
             return;
     }
 }
-
-#endif

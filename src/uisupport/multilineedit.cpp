@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -185,7 +185,11 @@ void MultiLineEdit::updateSizeHint()
 
     // use the style to determine a decent size
     int h = qMin(qMax((int)document()->size().height() + scrollBarHeight, minPixelHeight), maxPixelHeight) + 2 * frameWidth();
+#if QT_VERSION < 0x050000
     QStyleOptionFrameV2 opt;
+#else
+    QStyleOptionFrame opt;
+#endif
     opt.initFrom(this);
     opt.rect = QRect(0, 0, 100, h);
     opt.lineWidth = lineWidth();

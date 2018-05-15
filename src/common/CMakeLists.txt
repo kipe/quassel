@@ -11,8 +11,10 @@ set(SOURCES
     bufferviewmanager.cpp
     compressor.cpp
     ctcpevent.cpp
+    dccconfig.cpp
     event.cpp
     eventmanager.cpp
+    highlightrulemanager.cpp
     identity.cpp
     ignorelistmanager.cpp
     internalpeer.cpp
@@ -37,6 +39,8 @@ set(SOURCES
     transfer.cpp
     transfermanager.cpp
     util.cpp
+
+    serializers/serializers.cpp
 
     protocols/datastream/datastreampeer.cpp
     protocols/legacy/legacypeer.cpp

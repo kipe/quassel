@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -46,7 +46,20 @@ public:
     inline void enableWebPreview(bool enabled) { setLocalValue("ShowWebPreview", enabled); }
 
     /**
-     * Gets the format string for chat log timestamps
+     * Gets if a custom timestamp format is used.
+     *
+     * @returns True if custom timestamp format used, otherwise false
+     */
+    inline bool useCustomTimestampFormat() { return localValue("UseCustomTimestampFormat", false).toBool(); }
+    /**
+     * Sets whether a custom timestamp format is used.
+     *
+     * @param[in] enabled True if custom timestamp format used, otherwise false
+     */
+    inline void setUseCustomTimestampFormat(bool enabled) { setLocalValue("UseCustomTimestampFormat", enabled); }
+
+    /**
+     * Gets the format string for chat log timestamps.
      *
      * @returns String representing timestamp format, e.g. "[hh:mm:ss]" or " hh:mm:ss"
      */
@@ -59,6 +72,13 @@ public:
      * @param[in] format String representing timestamp format, e.g. "[hh:mm:ss]" or " hh:mm:ss"
      */
     inline void setTimestampFormatString(const QString &format) { setLocalValue("TimestampFormat", format); }
+
+    /**
+     * Gets if prefixmodes are shown before sender names
+     *
+     * @returns True if sender prefixmodes enabled, otherwise false
+     */
+    inline bool showSenderPrefixes() { return localValue("ShowSenderPrefixes", false).toBool(); }
 
     /**
      * Gets if brackets are shown around sender names

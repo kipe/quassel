@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -189,6 +189,8 @@ void AliasManager::expand(const QString &alias, const BufferInfo &bufferInfo, co
         for (int j = params.count(); j > 0; j--) {
             IrcUser *ircUser = net->ircUser(params[j - 1]);
             command = command.replace(QString("$%1:hostname").arg(j), ircUser ? ircUser->host() : QString("*"));
+            command = command.replace(QString("$%1:ident").arg(j), ircUser ? ircUser->user() : QString("*"));
+            command = command.replace(QString("$%1:account").arg(j), ircUser ? ircUser->account() : QString("*"));
             command = command.replace(QString("$%1").arg(j), params[j - 1]);
         }
         command = command.replace("$0", msg);

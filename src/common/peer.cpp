@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -33,6 +33,50 @@ AuthHandler *Peer::authHandler() const
     return _authHandler;
 }
 
+QDateTime Peer::connectedSince() const {
+    return _connectedSince;
+}
+
+void Peer::setConnectedSince(const QDateTime &connectedSince) {
+    _connectedSince = connectedSince;
+}
+
+QString Peer::buildDate() const {
+    return _buildDate;
+}
+
+void Peer::setBuildDate(const QString &buildDate) {
+    _buildDate = buildDate;
+}
+
+QString Peer::clientVersion() const {
+    return _clientVersion;
+}
+
+void Peer::setClientVersion(const QString &clientVersion) {
+    _clientVersion = clientVersion;
+}
+
+bool Peer::hasFeature(Quassel::Feature feature) const {
+    return _features.isEnabled(feature);
+}
+
+Quassel::Features Peer::features() const
+{
+    return _features;
+}
+
+void Peer::setFeatures(Quassel::Features features) {
+    _features = std::move(features);
+}
+
+int Peer::id() const {
+    return _id;
+}
+
+void Peer::setId(int id) {
+    _id = id;
+}
 
 // PeerPtr is used in RPC signatures for enabling receivers to send replies
 // to a particular peer rather than broadcast to all connected ones.

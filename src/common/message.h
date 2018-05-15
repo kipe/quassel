@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -53,6 +53,7 @@ public:
         NetsplitQuit = 0x10000,
         Invite = 0x20000,
     };
+    Q_DECLARE_FLAGS(Types, Type)
 
     // DO NOT CHANGE without knowing what you do, some of these flags are stored in the database
     enum Flag {
@@ -66,9 +67,11 @@ public:
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 
-    Message(const BufferInfo &bufferInfo = BufferInfo(), Type type = Plain, const QString &contents = "", const QString &sender = "", Flags flags = None);
+    Message(const BufferInfo &bufferInfo = BufferInfo(), Type type = Plain, const QString &contents = {},
+            const QString &sender = {}, const QString &senderPrefixes = {}, Flags flags = None);
     Message(const QDateTime &ts, const BufferInfo &buffer = BufferInfo(), Type type = Plain,
-        const QString &contents = "", const QString &sender = "", Flags flags = None);
+            const QString &contents = {}, const QString &sender = {}, const QString &senderPrefixes = {},
+            Flags flags = None);
 
     inline static Message ChangeOfDay(const QDateTime &day) { return Message(day, BufferInfo(), DayChange); }
     inline const MsgId &msgId() const { return _msgId; }
@@ -79,6 +82,7 @@ public:
     inline void setBufferId(BufferId id) { _bufferInfo.setBufferId(id); }
     inline const QString &contents() const { return _contents; }
     inline const QString &sender() const { return _sender; }
+    inline const QString &senderPrefixes() const { return _senderPrefixes; }
     inline Type type() const { return _type; }
     inline Flags flags() const { return _flags; }
     inline void setFlags(Flags flags) { _flags = flags; }
@@ -94,6 +98,7 @@ private:
     BufferInfo _bufferInfo;
     QString _contents;
     QString _sender;
+    QString _senderPrefixes;
     Type _type;
     Flags _flags;
 
@@ -108,6 +113,7 @@ QDataStream &operator>>(QDataStream &in, Message &msg);
 QDebug operator<<(QDebug dbg, const Message &msg);
 
 Q_DECLARE_METATYPE(Message)
+Q_DECLARE_OPERATORS_FOR_FLAGS(Message::Types)
 Q_DECLARE_OPERATORS_FOR_FLAGS(Message::Flags)
 
 #endif

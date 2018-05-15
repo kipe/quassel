@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -38,6 +38,9 @@
 #include "signalproxy.h"
 #include "ircuser.h"
 #include "ircchannel.h"
+
+// IRCv3 capabilities
+#include "irccap.h"
 
 // defined below!
 struct NetworkInfo;
@@ -169,10 +172,37 @@ public :
     //Network::ConnectionState connectionState() const;
     inline int connectionState() const { return _connectionState; }
 
+    /**@{*/
+    /**
+     * Translates a user’s prefix to the channelmode associated with it.
+     * @param prefix Prefix to be translated.
+     */
     QString prefixToMode(const QString &prefix) const;
     inline QString prefixToMode(const QCharRef &prefix) const { return prefixToMode(QString(prefix)); }
+    inline QString prefixesToModes(const QString &prefix) const {
+        QString modes;
+        for (QChar c : prefix) {
+            modes += prefixToMode(c);
+        }
+        return modes;
+    }
+    /**@}*/
+
+    /**@{*/
+    /**
+     * Translates a user’s prefix to the channelmode associated with it.
+     * @param prefix Prefix to be translated.
+     */
     QString modeToPrefix(const QString &mode) const;
     inline QString modeToPrefix(const QCharRef &mode) const { return modeToPrefix(QString(mode)); }
+    inline QString modesToPrefixes(const QString &mode) const {
+        QString prefixes;
+        for (QChar c : mode) {
+            prefixes += modeToPrefix(c);
+        }
+        return prefixes;
+    }
+    /**@}*/
 
     ChannelModeType channelModeType(const QString &mode);
     inline ChannelModeType channelModeType(const QCharRef &mode) { return channelModeType(QString(mode)); }
@@ -261,6 +291,19 @@ public :
     QString support(const QString &param) const;
 
     /**
+     * Checks if a given capability is advertised by the server.
+     *
+     * These results aren't valid if the network is disconnected or capability negotiation hasn't
+     * happened, and some servers might not correctly advertise capabilities.  Don't treat this as
+     * a guarantee.
+     *
+     * @param[in] capability Name of capability
+     * @returns True if connected and advertised by the server, otherwise false
+     */
+    inline bool capAvailable(const QString &capability) const { return _caps.contains(capability.toLower()); }
+    // IRCv3 specs all use lowercase capability names
+
+    /**
      * Checks if a given capability is acknowledged and active.
      *
      * @param[in] capability Name of capability
@@ -279,6 +322,17 @@ public :
     // IRCv3 specs all use lowercase capability names
     // QHash returns the default constructed value if not found, in this case, empty string
     // See:  https://doc.qt.io/qt-4.8/qhash.html#value
+
+    /**
+     * Check if the given authentication mechanism is likely to be supported.
+     *
+     * This depends on the server advertising SASL support and either declaring available mechanisms
+     * (SASL 3.2), or just indicating something is supported (SASL 3.1).
+     *
+     * @param[in] saslMechanism  Desired SASL mechanism
+     * @return True if mechanism supported or unknown, otherwise false
+     */
+    bool saslMaybeSupports(const QString &saslMechanism) const;
 
     IrcUser *newIrcUser(const QString &hostmask, const QVariantMap &initData = QVariantMap());
     inline IrcUser *newIrcUser(const QByteArray &hostmask) { return newIrcUser(decodeServerString(hostmask)); }

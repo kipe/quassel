@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -116,7 +116,7 @@ InputWidget::InputWidget(QWidget *parent)
     setShowStyleButtons(s.value("ShowStyleButtons", true));
 
     s.notify("EnablePerChatHistory", this, SLOT(setEnablePerChatHistory(QVariant)));
-    setEnablePerChatHistory(s.value("EnablePerChatHistory", false));
+    setEnablePerChatHistory(s.value("EnablePerChatHistory", true));
 
     s.notify("MaxNumLines", this, SLOT(setMaxLines(QVariant)));
     setMaxLines(s.value("MaxNumLines", 5));
@@ -125,7 +125,7 @@ InputWidget::InputWidget(QWidget *parent)
     setScrollBarsEnabled(s.value("EnableScrollBars", true));
 
     s.notify("EnableLineWrap", this, SLOT(setLineWrapEnabled(QVariant)));
-    setLineWrapEnabled(s.value("EnableLineWrap", false));
+    setLineWrapEnabled(s.value("EnableLineWrap", true));
 
     s.notify("EnableMultiLine", this, SLOT(setMultiLineEnabled(QVariant)));
     setMultiLineEnabled(s.value("EnableMultiLine", true));

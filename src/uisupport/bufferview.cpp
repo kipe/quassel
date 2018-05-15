@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -73,6 +73,8 @@ void BufferView::init()
 
     header()->hide(); // nobody seems to use this anyway
 
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
     // breaks with Qt 4.8
     if (QString("4.8.0") > qVersion()) // FIXME breaks with Qt versions >= 4.10!
         setAnimated(true);
@@ -89,14 +91,13 @@ void BufferView::init()
     setSortingEnabled(true);
     sortByColumn(0, Qt::AscendingOrder);
 
-    // activated() fails on X11 and Qtopia at least
-#if defined Q_WS_QWS || defined Q_WS_X11
-    disconnect(this, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(joinChannel(QModelIndex)));
-    connect(this, SIGNAL(doubleClicked(QModelIndex)), SLOT(joinChannel(QModelIndex)));
-#else
+#if defined Q_OS_MACOS || defined Q_OS_WIN
     // afaik this is better on Mac and Windows
     disconnect(this, SIGNAL(activated(QModelIndex)), this, SLOT(joinChannel(QModelIndex)));
     connect(this, SIGNAL(activated(QModelIndex)), SLOT(joinChannel(QModelIndex)));
+#else
+    disconnect(this, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(joinChannel(QModelIndex)));
+    connect(this, SIGNAL(doubleClicked(QModelIndex)), SLOT(joinChannel(QModelIndex)));
 #endif
 }
 
@@ -130,6 +131,11 @@ void BufferView::setModel(QAbstractItemModel *model)
     }
 
     connect(model, SIGNAL(layoutChanged()), this, SLOT(on_layoutChanged()));
+
+    // Make sure collapsation is correct after setting a model
+    // This might not be needed here, only in BufferView::setFilteredModel().  If issues arise, just
+    // move down to setFilteredModel (which calls this function).
+    setExpandedState();
 }
 
 
@@ -209,16 +215,6 @@ void BufferView::joinChannel(const QModelIndex &index)
     BufferInfo bufferInfo = index.data(NetworkModel::BufferInfoRole).value<BufferInfo>();
 
     Client::userInput(bufferInfo, QString("/JOIN %1").arg(bufferInfo.bufferName()));
-}
-
-
-void BufferView::keyPressEvent(QKeyEvent *event)
-{
-    if (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete) {
-        event->accept();
-        removeSelectedBuffers();
-    }
-    TreeViewTouch::keyPressEvent(event);
 }
 
 
@@ -330,7 +326,19 @@ void BufferView::on_configChanged()
 {
     Q_ASSERT(model());
 
-    // expand all active networks... collapse inactive ones... unless manually changed
+    // Expand/collapse as needed
+    setExpandedState();
+
+    if (config()) {
+        // update selection to current one
+        Client::bufferModel()->synchronizeView(this);
+    }
+}
+
+
+void BufferView::setExpandedState()
+{
+    // Expand all active networks, collapse inactive ones... unless manually changed
     QModelIndex networkIdx;
     NetworkId networkId;
     for (int row = 0; row < model()->rowCount(); row++) {
@@ -343,11 +351,6 @@ void BufferView::on_configChanged()
             continue;
 
         setExpandedState(networkIdx);
-    }
-
-    if (config()) {
-        // update selection to current one
-        Client::bufferModel()->synchronizeView(this);
     }
 }
 
@@ -498,6 +501,8 @@ void BufferView::changeBuffer(Direction direction)
     QModelIndex currentIndex = selectionModel()->currentIndex();
     QModelIndex resultingIndex;
 
+    QModelIndex lastNetIndex = model()->index(model()->rowCount() - 1, 0, QModelIndex());
+
     if (currentIndex.parent().isValid()) {
         //If we are a child node just switch among siblings unless it's the first/last child
         resultingIndex = currentIndex.sibling(currentIndex.row() + direction, 0);
@@ -514,6 +519,8 @@ void BufferView::changeBuffer(Direction direction)
         //If we have a toplevel node, try and get an adjacent child
         if (direction == Backward) {
             QModelIndex newParent = currentIndex.sibling(currentIndex.row() - 1, 0);
+            if (currentIndex.row() == 0)
+                newParent = lastNetIndex;
             if (model()->hasChildren(newParent))
                 resultingIndex = newParent.child(model()->rowCount(newParent) - 1, 0);
             else
@@ -527,8 +534,12 @@ void BufferView::changeBuffer(Direction direction)
         }
     }
 
-    if (!resultingIndex.isValid())
-        return;
+    if (!resultingIndex.isValid()) {
+        if (direction == Forward)
+            resultingIndex = model()->index(0, 0, QModelIndex());
+        else
+            resultingIndex = lastNetIndex.child(model()->rowCount(lastNetIndex) - 1, 0);
+    }
 
     selectionModel()->setCurrentIndex(resultingIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     selectionModel()->select(resultingIndex, QItemSelectionModel::ClearAndSelect);
@@ -580,13 +591,6 @@ void BufferView::hideCurrentBuffer()
     //The check above means we won't be looking at a network, which should always be the first row, so we can just go backwards.
     changeBuffer(Backward);
 
-    /*if(removedRows.contains(bufferId))
-      continue;
-
-    removedRows << bufferId;*/
-    /*if(permanently)
-      config()->requestRemoveBufferPermanently(bufferId);
-    else*/
     config()->requestRemoveBuffer(bufferId);
 }
 
@@ -657,7 +661,11 @@ bool BufferViewDelegate::editorEvent(QEvent *event, QAbstractItemModel *model, c
     if (!value.isValid())
         return QStyledItemDelegate::editorEvent(event, model, option, index);
 
+#if QT_VERSION < 0x050000
     QStyleOptionViewItemV4 viewOpt(option);
+#else
+    QStyleOptionViewItem viewOpt(option);
+#endif
     initStyleOption(&viewOpt, index);
 
     QRect checkRect = viewOpt.widget->style()->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &viewOpt, viewOpt.widget);
@@ -711,6 +719,14 @@ BufferViewDock::BufferViewDock(BufferViewConfig *config, QWidget *parent)
     QDockWidget::setWidget(_widget);
 }
 
+void BufferViewDock::setLocked(bool locked) {
+    if (locked) {
+        setFeatures(0);
+    }
+    else {
+        setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    }
+}
 
 void BufferViewDock::updateTitle()
 {

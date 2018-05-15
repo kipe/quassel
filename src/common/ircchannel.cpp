@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -555,9 +555,8 @@ bool IrcChannel::hasMode(const QChar &mode) const
         return _C_channelModes.contains(mode);
     case Network::D_CHANMODE:
         return _D_channelModes.contains(mode);
-    default:
-        return false;
     }
+    return false;
 }
 
 
@@ -590,9 +589,11 @@ QStringList IrcChannel::modeValueList(const QChar &mode) const
     case Network::A_CHANMODE:
         if (_A_channelModes.contains(mode))
             return _A_channelModes[mode];
+        break;
     default:
-        return QStringList();
+        ;
     }
+    return {};
 }
 
 

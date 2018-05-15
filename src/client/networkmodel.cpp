@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -34,6 +34,7 @@
 #include "ircchannel.h"
 #include "network.h"
 #include "signalproxy.h"
+#include "buffersyncer.h"
 
 /*****************************************
 *  Network Items
@@ -144,6 +145,10 @@ BufferItem *NetworkItem::bufferItem(const BufferInfo &bufferInfo)
     default:
         break;
     }
+
+    BufferSyncer *bufferSyncer = Client::bufferSyncer();
+    if (bufferSyncer)
+        bufferItem->addActivity(bufferSyncer->activity(bufferItem->bufferId()), false);
 
     return bufferItem;
 }
@@ -293,11 +298,16 @@ void BufferItem::setActivityLevel(BufferInfo::ActivityLevel level)
 
 void BufferItem::clearActivityLevel()
 {
-    _activity = BufferInfo::NoActivity;
+    if (Client::isCoreFeatureEnabled(Quassel::Feature::BufferActivitySync)) {
+        // If the core handles activity sync, clear only the highlight flag
+        _activity &= ~BufferInfo::Highlight;
+    } else {
+        _activity = BufferInfo::NoActivity;
+    }
     _firstUnreadMsgId = MsgId();
 
     // FIXME remove with core proto v11
-    if (!(Client::coreFeatures() & Quassel::SynchronizedMarkerLine)) {
+    if (!Client::isCoreFeatureEnabled(Quassel::Feature::SynchronizedMarkerLine)) {
         _markerLineMsgId = _lastSeenMsgId;
     }
 
@@ -307,6 +317,11 @@ void BufferItem::clearActivityLevel()
 
 void BufferItem::updateActivityLevel(const Message &msg)
 {
+    // If the core handles activity, and this message is not a highlight, ignore this
+    if (Client::isCoreFeatureEnabled(Quassel::Feature::BufferActivitySync) && !msg.flags().testFlag(Message::Highlight)) {
+        return;
+    }
+
     if (isCurrentBuffer()) {
         return;
     }
@@ -327,19 +342,43 @@ void BufferItem::updateActivityLevel(const Message &msg)
         _firstUnreadMsgId = msg.msgId();
     }
 
+    Message::Types type;
+    // If the core handles activities, ignore types
+    if (Client::isCoreFeatureEnabled(Quassel::Feature::BufferActivitySync)) {
+        type = Message::Types();
+    } else {
+        type = msg.type();
+    }
+
+    if (addActivity(type, msg.flags().testFlag(Message::Highlight)) || stateChanged) {
+        emit dataChanged();
+    }
+}
+
+void BufferItem::setActivity(Message::Types type, bool highlight) {
     BufferInfo::ActivityLevel oldLevel = activityLevel();
 
-    _activity |= BufferInfo::OtherActivity;
-    if (msg.type() & (Message::Plain | Message::Notice | Message::Action))
+    _activity &= BufferInfo::Highlight;
+    addActivity(type, highlight);
+
+    if (_activity != oldLevel) {
+        emit dataChanged();
+    }
+}
+
+bool BufferItem::addActivity(Message::Types type, bool highlight) {
+    auto oldActivity = activityLevel();
+
+    if (type != Message::Types())
+        _activity |= BufferInfo::OtherActivity;
+
+    if (type.testFlag(Message::Plain) || type.testFlag(Message::Notice) || type.testFlag(Message::Action))
         _activity |= BufferInfo::NewMessage;
 
-    if (msg.flags() & Message::Highlight || msg.bufferInfo().type() == BufferInfo::QueryBuffer)
+    if (highlight)
         _activity |= BufferInfo::Highlight;
 
-    stateChanged |= (oldLevel != _activity);
-
-    if (stateChanged)
-        emit dataChanged();
+    return oldActivity != _activity;
 }
 
 
@@ -395,7 +434,7 @@ void BufferItem::setLastSeenMsgId(MsgId msgId)
     _lastSeenMsgId = msgId;
 
     // FIXME remove with core protocol v11
-    if (!(Client::coreFeatures() & Quassel::SynchronizedMarkerLine)) {
+    if (!Client::isCoreFeatureEnabled(Quassel::Feature::SynchronizedMarkerLine)) {
         if (!isCurrentBuffer())
             _markerLineMsgId = msgId;
     }
@@ -1705,4 +1744,16 @@ void NetworkModel::messageRedirectionSettingsChanged()
     _userNoticesTarget = bufferSettings.userNoticesTarget();
     _serverNoticesTarget = bufferSettings.serverNoticesTarget();
     _errorMsgsTarget = bufferSettings.errorMsgsTarget();
+}
+
+void NetworkModel::bufferActivityChanged(BufferId bufferId, const Message::Types activity) {
+    auto _bufferItem = findBufferItem(bufferId);
+    if (!_bufferItem) {
+        qDebug() << "NetworkModel::bufferActivityChanged(): buffer is unknown:" << bufferId;
+        return;
+    }
+    auto hiddenTypes = BufferSettings(bufferId).messageFilter();
+    auto visibleTypes = ~hiddenTypes;
+    auto activityVisibleTypesIntersection = activity & visibleTypes;
+    _bufferItem->setActivity(activityVisibleTypesIntersection, false);
 }

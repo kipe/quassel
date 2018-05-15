@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -24,6 +24,8 @@
 #include <QTcpSocket>
 
 #include "datastreampeer.h"
+#include "quassel.h"
+#include "serializers/serializers.h"
 
 using namespace Protocol;
 
@@ -58,7 +60,8 @@ void DataStreamPeer::processMessage(const QByteArray &msg)
     QDataStream stream(msg);
     stream.setVersion(QDataStream::Qt_4_2);
     QVariantList list;
-    stream >> list;
+    if (!Serializers::deserialize(stream, features(), list))
+        close("Peer sent corrupt data, closing down!");
     if (stream.status() != QDataStream::Ok) {
         close("Peer sent corrupt data, closing down!");
         return;
@@ -116,7 +119,11 @@ void DataStreamPeer::handleHandshakeMessage(const QVariantList &mapData)
     }
 
     if (msgType == "ClientInit") {
-        handle(RegisterClient(m["ClientVersion"].toString(), m["ClientDate"].toString(), false)); // UseSsl obsolete
+        handle(RegisterClient{Quassel::Features{m["FeatureList"].toStringList(), Quassel::LegacyFeatures(m["Features"].toUInt())},
+                              m["ClientVersion"].toString(),
+                              m["ClientDate"].toString(),
+                              false  // UseSsl obsolete
+               });
     }
 
     else if (msgType == "ClientInitReject") {
@@ -124,12 +131,17 @@ void DataStreamPeer::handleHandshakeMessage(const QVariantList &mapData)
     }
 
     else if (msgType == "ClientInitAck") {
-        handle(ClientRegistered(m["CoreFeatures"].toUInt(), m["Configured"].toBool(), m["StorageBackends"].toList(), false)); // SupportsSsl is obsolete
+        handle(ClientRegistered{Quassel::Features{m["FeatureList"].toStringList(), Quassel::LegacyFeatures(m["CoreFeatures"].toUInt())},
+                                m["Configured"].toBool(),
+                                m["StorageBackends"].toList(),
+                                m["Authenticators"].toList(),
+                                false  // SupportsSsl obsolete
+               });
     }
 
     else if (msgType == "CoreSetupData") {
         QVariantMap map = m["SetupData"].toMap();
-        handle(SetupData(map["AdminUser"].toString(), map["AdminPasswd"].toString(), map["Backend"].toString(), map["ConnectionProperties"].toMap()));
+        handle(SetupData(map["AdminUser"].toString(), map["AdminPasswd"].toString(), map["Backend"].toString(), map["ConnectionProperties"].toMap(), map["Authenticator"].toString(), map["AuthProperties"].toMap()));
     }
 
     else if (msgType == "CoreSetupReject") {
@@ -166,6 +178,8 @@ void DataStreamPeer::handleHandshakeMessage(const QVariantList &mapData)
 void DataStreamPeer::dispatch(const RegisterClient &msg) {
     QVariantMap m;
     m["MsgType"] = "ClientInit";
+    m["Features"] = static_cast<quint32>(msg.features.toLegacyFeatures());
+    m["FeatureList"] = msg.features.toStringList();
     m["ClientVersion"] = msg.clientVersion;
     m["ClientDate"] = msg.buildDate;
 
@@ -185,9 +199,17 @@ void DataStreamPeer::dispatch(const ClientDenied &msg) {
 void DataStreamPeer::dispatch(const ClientRegistered &msg) {
     QVariantMap m;
     m["MsgType"] = "ClientInitAck";
-    m["CoreFeatures"] = msg.coreFeatures;
-    m["StorageBackends"] = msg.backendInfo;
+    if (hasFeature(Quassel::Feature::ExtendedFeatures)) {
+        m["FeatureList"] = msg.features.toStringList();
+    }
+    else {
+        m["CoreFeatures"] = static_cast<quint32>(msg.features.toLegacyFeatures());
+    }
     m["LoginEnabled"] = m["Configured"] = msg.coreConfigured;
+    m["StorageBackends"] = msg.backendInfo;
+    if (hasFeature(Quassel::Feature::Authenticators)) {
+        m["Authenticators"] = msg.authenticatorInfo;
+    }
 
     writeMessage(m);
 }
@@ -200,6 +222,10 @@ void DataStreamPeer::dispatch(const SetupData &msg)
     map["AdminPasswd"] = msg.adminPassword;
     map["Backend"] = msg.backend;
     map["ConnectionProperties"] = msg.setupData;
+
+    // Auth backend properties.
+    map["Authenticator"] = msg.authenticator;
+    map["AuthProperties"] = msg.authSetupData;
 
     QVariantMap m;
     m["MsgType"] = "CoreSetupData";

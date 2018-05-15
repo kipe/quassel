@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -38,6 +38,7 @@
 #include "clientuserinputhandler.h"
 #include "coreaccountmodel.h"
 #include "coreconnection.h"
+#include "dccconfig.h"
 #include "ircchannel.h"
 #include "ircuser.h"
 #include "message.h"
@@ -47,6 +48,7 @@
 #include "networkmodel.h"
 #include "quassel.h"
 #include "signalproxy.h"
+#include "transfermodel.h"
 #include "util.h"
 #include "clientauthhandler.h"
 
@@ -54,7 +56,6 @@
 #include <stdlib.h>
 
 QPointer<Client> Client::instanceptr = 0;
-Quassel::Features Client::_coreFeatures = 0;
 
 /*** Initialization/destruction ***/
 
@@ -100,11 +101,14 @@ Client::Client(QObject *parent)
     _backlogManager(new ClientBacklogManager(this)),
     _bufferViewManager(0),
     _bufferViewOverlay(new BufferViewOverlay(this)),
+    _dccConfig(0),
     _ircListHelper(new ClientIrcListHelper(this)),
     _inputHandler(0),
     _networkConfig(0),
     _ignoreListManager(0),
+    _highlightRuleManager(0),
     _transferManager(0),
+    _transferModel(new TransferModel(this)),
     _messageModel(0),
     _messageProcessor(0),
     _coreAccountModel(new CoreAccountModel(this)),
@@ -156,6 +160,9 @@ void Client::init()
     p->attachSignal(this, SIGNAL(requestPasswordChange(PeerPtr,QString,QString,QString)), SIGNAL(changePassword(PeerPtr,QString,QString,QString)));
     p->attachSlot(SIGNAL(passwordChanged(PeerPtr,bool)), this, SLOT(corePasswordChanged(PeerPtr,bool)));
 
+    p->attachSignal(this, SIGNAL(requestKickClient(int)), SIGNAL(kickClient(int)));
+    p->attachSlot(SIGNAL(disconnectFromCore()), this, SLOT(disconnectFromCore()));
+
     //connect(mainUi(), SIGNAL(connectToCore(const QVariantMap &)), this, SLOT(connectToCore(const QVariantMap &)));
     connect(mainUi(), SIGNAL(disconnectFromCore()), this, SLOT(disconnectFromCore()));
     connect(this, SIGNAL(connected()), mainUi(), SLOT(connectedToCore()));
@@ -180,9 +187,9 @@ AbstractUi *Client::mainUi()
 }
 
 
-void Client::setCoreFeatures(Quassel::Features features)
+bool Client::isCoreFeatureEnabled(Quassel::Feature feature)
 {
-    _coreFeatures = features;
+    return coreConnection()->peer() ? coreConnection()->peer()->hasFeature(feature) : false;
 }
 
 
@@ -386,6 +393,7 @@ void Client::setSyncedToCore()
     connect(bufferSyncer(), SIGNAL(buffersPermanentlyMerged(BufferId, BufferId)), this, SLOT(buffersPermanentlyMerged(BufferId, BufferId)));
     connect(bufferSyncer(), SIGNAL(buffersPermanentlyMerged(BufferId, BufferId)), _messageModel, SLOT(buffersPermanentlyMerged(BufferId, BufferId)));
     connect(bufferSyncer(), SIGNAL(bufferMarkedAsRead(BufferId)), SIGNAL(bufferMarkedAsRead(BufferId)));
+    connect(bufferSyncer(), SIGNAL(bufferActivityChanged(BufferId, const Message::Types)), _networkModel, SLOT(bufferActivityChanged(BufferId, const Message::Types)));
     connect(networkModel(), SIGNAL(requestSetLastSeenMsg(BufferId, MsgId)), bufferSyncer(), SLOT(requestSetLastSeenMsg(BufferId, const MsgId &)));
 
     SignalProxy *p = signalProxy();
@@ -412,32 +420,53 @@ void Client::setSyncedToCore()
     _ignoreListManager = new ClientIgnoreListManager(this);
     p->synchronize(ignoreListManager());
 
+    // create Core-Side HighlightRuleManager
+    Q_ASSERT(!_highlightRuleManager);
+    _highlightRuleManager = new HighlightRuleManager(this);
+    p->synchronize(highlightRuleManager());
+
+/*  not ready yet
+    // create TransferManager and DccConfig if core supports them
+    Q_ASSERT(!_dccConfig);
     Q_ASSERT(!_transferManager);
-    _transferManager = new ClientTransferManager(this);
-    p->synchronize(transferManager());
+    if (isCoreFeatureEnabled(Quassel::Feature::DccFileTransfer)) {
+        _dccConfig = new DccConfig(this);
+        p->synchronize(dccConfig());
+        _transferManager = new ClientTransferManager(this);
+        _transferModel->setManager(_transferManager);
+        p->synchronize(transferManager());
+    }
+*/
 
     // trigger backlog request once all active bufferviews are initialized
-    connect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(requestInitialBacklog()));
+    connect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(finishConnectionInitialization()));
 
     _connected = true;
     emit connected();
     emit coreConnectionStateChanged(true);
 }
 
-
-void Client::requestInitialBacklog()
+void Client::finishConnectionInitialization()
 {
     // usually it _should_ take longer until the bufferViews are initialized, so that's what
     // triggers this slot. But we have to make sure that we know all buffers yet.
     // so we check the BufferSyncer and in case it wasn't initialized we wait for that instead
     if (!bufferSyncer()->isInitialized()) {
-        disconnect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(requestInitialBacklog()));
-        connect(bufferSyncer(), SIGNAL(initDone()), this, SLOT(requestInitialBacklog()));
+        disconnect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(finishConnectionInitialization()));
+        connect(bufferSyncer(), SIGNAL(initDone()), this, SLOT(finishConnectionInitialization()));
         return;
     }
-    disconnect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(requestInitialBacklog()));
-    disconnect(bufferSyncer(), SIGNAL(initDone()), this, SLOT(requestInitialBacklog()));
+    disconnect(bufferViewOverlay(), SIGNAL(initDone()), this, SLOT(finishConnectionInitialization()));
+    disconnect(bufferSyncer(), SIGNAL(initDone()), this, SLOT(finishConnectionInitialization()));
 
+    requestInitialBacklog();
+    if (isCoreFeatureEnabled(Quassel::Feature::BufferActivitySync))
+        bufferSyncer()->markActivitiesChanged();
+}
+
+
+void Client::requestInitialBacklog()
+{
     _backlogManager->requestInitialBacklog();
 }
 
@@ -454,7 +483,6 @@ void Client::disconnectFromCore()
 void Client::setDisconnectedFromCore()
 {
     _connected = false;
-    _coreFeatures = 0;
 
     emit disconnected();
     emit coreConnectionStateChanged(false);
@@ -486,9 +514,20 @@ void Client::setDisconnectedFromCore()
         _ignoreListManager = 0;
     }
 
+    if (_highlightRuleManager) {
+        _highlightRuleManager->deleteLater();
+        _highlightRuleManager = nullptr;
+    }
+
     if (_transferManager) {
+        _transferModel->setManager(nullptr);
         _transferManager->deleteLater();
-        _transferManager = 0;
+        _transferManager = nullptr;
+    }
+
+    if (_dccConfig) {
+        _dccConfig->deleteLater();
+        _dccConfig = nullptr;
     }
 
     // we probably don't want to save pending input for reconnect
@@ -657,6 +696,12 @@ void Client::changePassword(const QString &oldPassword, const QString &newPasswo
     account.setPassword(newPassword);
     coreAccountModel()->createOrUpdateAccount(account);
     emit instance()->requestPasswordChange(nullptr, account.user(), oldPassword, newPassword);
+}
+
+
+void Client::kickClient(int peerId)
+{
+    emit instance()->requestKickClient(peerId);
 }
 
 

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -107,6 +107,18 @@ namespace IrcCap {
     namespace Vendor {
 
         /**
+         * Twitch.tv membership message support
+         *
+         * User list in a channel can be quite large and often non required for bot users and is then optional.
+         *
+         * From Twitch.tv documentation:
+         * "Adds membership state event data. By default, we do not send this data to clients without this capability."
+         *
+         * https://dev.twitch.tv/docs/v5/guides/irc/#twitch-irc-capability-membership
+         */
+        const QString TWITCH_MEMBERSHIP = "twitch.tv/membership";
+
+        /**
          * Self message support, as recognized by ZNC.
          *
          * Some servers (e.g. Bitlbee) assume self-message support; ZNC requires a capability
@@ -131,6 +143,7 @@ namespace IrcCap {
             MULTI_PREFIX,
             SASL,
             USERHOST_IN_NAMES,
+            Vendor::TWITCH_MEMBERSHIP,
             Vendor::ZNC_SELF_MESSAGE
     };
     // NOTE: If you modify the knownCaps list, update the constants above as needed.
@@ -141,22 +154,6 @@ namespace IrcCap {
      * http://ircv3.net/specs/extensions/sasl-3.1.html
      */
     namespace SaslMech {
-
-        /**
-         * Check if the given authentication mechanism is likely to be supported.
-         *
-         * @param[in] saslCapValue   QString of SASL capability value, e.g. capValue(IrcCap::SASL)
-         * @param[in] saslMechanism  Desired SASL mechanism
-         * @return True if mechanism supported or unknown, otherwise false
-         */
-        inline bool maybeSupported(const QString &saslCapValue, const QString &saslMechanism) { return
-                    ((saslCapValue.length() == 0) || (saslCapValue.contains(saslMechanism, Qt::CaseInsensitive))); }
-        // SASL mechanisms are only specified in capability values as part of SASL 3.2.  In
-        // SASL 3.1, it's handled differently.  If we don't know via capability value, assume it's
-        // supported to reduce the risk of breaking existing setups.
-        // See: http://ircv3.net/specs/extensions/sasl-3.1.html
-        // And: http://ircv3.net/specs/extensions/sasl-3.2.html
-
         /**
          * PLAIN authentication, e.g. hashed password
          */

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -26,6 +26,7 @@
 
 #include "corecoreinfo.h"
 #include "corealiasmanager.h"
+#include "corehighlightrulemanager.h"
 #include "coreignorelistmanager.h"
 #include "peer.h"
 #include "protocol.h"
@@ -35,6 +36,7 @@
 class CoreBacklogManager;
 class CoreBufferSyncer;
 class CoreBufferViewManager;
+class CoreDccConfig;
 class CoreIdentity;
 class CoreIrcListHelper;
 class CoreNetwork;
@@ -67,6 +69,7 @@ public:
     inline UserId user() const { return _user; }
     CoreNetwork *network(NetworkId) const;
     CoreIdentity *identity(IdentityId) const;
+    const QString strictSysident();
     inline CoreNetworkConfig *networkConfig() const { return _networkConfig; }
     NetworkConnection *networkConnection(NetworkId) const;
 
@@ -86,7 +89,9 @@ public:
     inline CoreIrcListHelper *ircListHelper() const { return _ircListHelper; }
 
     inline CoreIgnoreListManager *ignoreListManager() { return &_ignoreListManager; }
+    inline HighlightRuleManager *highlightRuleManager() { return &_highlightRuleManager; }
     inline CoreTransferManager *transferManager() const { return _transferManager; }
+    inline CoreDccConfig *dccConfig() const { return _dccConfig; }
 
 //   void attachNetworkConnection(NetworkConnection *conn);
 
@@ -129,10 +134,17 @@ public slots:
 
     void changePassword(PeerPtr peer, const QString &userName, const QString &oldPassword, const QString &newPassword);
 
+    void kickClient(int peerId);
+
     QHash<QString, QString> persistentChannels(NetworkId) const;
 
-    //! Marks us away (or unaway) on all networks
-    void globalAway(const QString &msg = QString());
+    /**
+     * Marks us away (or unaway) on all networks
+     *
+     * @param[in] msg             Away message, or blank to set unaway
+     * @param[in] skipFormatting  If true, skip timestamp formatting codes (e.g. if already done)
+     */
+    void globalAway(const QString &msg = QString(), const bool skipFormatting = false);
 
 signals:
     void initialized();
@@ -161,6 +173,8 @@ signals:
     void networkDisconnected(NetworkId);
 
     void passwordChanged(PeerPtr peer, bool success);
+
+    void disconnectFromCore();
 
 protected:
     virtual void customEvent(QEvent *event);
@@ -203,6 +217,7 @@ private:
     CoreBufferSyncer *_bufferSyncer;
     CoreBacklogManager *_backlogManager;
     CoreBufferViewManager *_bufferViewManager;
+    CoreDccConfig *_dccConfig;
     CoreIrcListHelper *_ircListHelper;
     CoreNetworkConfig *_networkConfig;
     CoreCoreInfo _coreInfo;
@@ -216,9 +231,17 @@ private:
 
     QScriptEngine *scriptEngine;
 
+    /**
+     * This method obtains the prefixes of the message's sender within a channel, by looking up their channelmodes, and
+     * processing them to prefixes based on the network's settings.
+     * @param sender The hostmask of the sender
+     * @param bufferInfo The BufferInfo object of the buffer
+     */
+    QString senderPrefixes(const QString &sender, const BufferInfo &bufferInfo) const;
     QList<RawMessage> _messageQueue;
     bool _processMessages;
     CoreIgnoreListManager _ignoreListManager;
+    CoreHighlightRuleManager _highlightRuleManager;
 };
 
 

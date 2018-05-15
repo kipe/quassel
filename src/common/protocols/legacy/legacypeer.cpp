@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,6 +23,8 @@
 #include <QTcpSocket>
 
 #include "legacypeer.h"
+#include "quassel.h"
+#include "serializers/serializers.h"
 
 /* version.inc is no longer used for this */
 const uint protocolVersion = 10;
@@ -62,7 +64,10 @@ void LegacyPeer::processMessage(const QByteArray &msg)
     QVariant item;
     if (_useCompression) {
         QByteArray rawItem;
-        stream >> rawItem;
+        if (!Serializers::deserialize(stream, features(), rawItem)) {
+            close("Peer sent corrupt data: unable to load QVariant!");
+            return;
+        }
 
         int nbytes = rawItem.size();
         if (nbytes <= 4) {
@@ -77,10 +82,15 @@ void LegacyPeer::processMessage(const QByteArray &msg)
 
         QDataStream itemStream(&rawItem, QIODevice::ReadOnly);
         itemStream.setVersion(QDataStream::Qt_4_2);
-        itemStream >> item;
-    }
-    else {
-        stream >> item;
+        if (!Serializers::deserialize(itemStream, features(), item)) {
+            close("Peer sent corrupt data: unable to load QVariant!");
+            return;
+        }
+    } else {
+        if (!Serializers::deserialize(stream, features(), item)) {
+            close("Peer sent corrupt data: unable to load QVariant!");
+            return;
+        }
     }
 
     if (stream.status() != QDataStream::Ok || !item.isValid()) {
@@ -151,7 +161,10 @@ void LegacyPeer::handleHandshakeMessage(const QVariant &msg)
             socket()->setProperty("UseCompression", true);
         }
 #endif
-        handle(RegisterClient(m["ClientVersion"].toString(), m["ClientDate"].toString(), m["UseSsl"].toBool()));
+        handle(RegisterClient{Quassel::Features{m["FeatureList"].toStringList(), Quassel::LegacyFeatures(m["Features"].toUInt())},
+                              m["ClientVersion"].toString(),
+                              m["ClientDate"].toString(),
+                              m["UseSsl"].toBool()});
     }
 
     else if (msgType == "ClientInitReject") {
@@ -170,12 +183,16 @@ void LegacyPeer::handleHandshakeMessage(const QVariant &msg)
             socket()->setProperty("UseCompression", true);
 #endif
 
-        handle(ClientRegistered(m["CoreFeatures"].toUInt(), m["Configured"].toBool(), m["StorageBackends"].toList(), m["SupportSsl"].toBool()));
+        handle(ClientRegistered{Quassel::Features{m["FeatureList"].toStringList(), Quassel::LegacyFeatures(m["CoreFeatures"].toUInt())},
+                                m["Configured"].toBool(),
+                                m["StorageBackends"].toList(),
+                                m["Authenticators"].toList(),
+                                m["SupportSsl"].toBool()});
     }
 
     else if (msgType == "CoreSetupData") {
         QVariantMap map = m["SetupData"].toMap();
-        handle(SetupData(map["AdminUser"].toString(), map["AdminPasswd"].toString(), map["Backend"].toString(), map["ConnectionProperties"].toMap()));
+        handle(SetupData(map["AdminUser"].toString(), map["AdminPasswd"].toString(), map["Backend"].toString(), map["ConnectionProperties"].toMap(), map["Authenticator"].toString(), map["AuthProperties"].toMap()));
     }
 
     else if (msgType == "CoreSetupReject") {
@@ -212,6 +229,8 @@ void LegacyPeer::handleHandshakeMessage(const QVariant &msg)
 void LegacyPeer::dispatch(const RegisterClient &msg) {
     QVariantMap m;
     m["MsgType"] = "ClientInit";
+    m["Features"] = static_cast<quint32>(msg.features.toLegacyFeatures());
+    m["FeatureList"] = msg.features.toStringList();
     m["ClientVersion"] = msg.clientVersion;
     m["ClientDate"] = msg.buildDate;
 
@@ -240,8 +259,16 @@ void LegacyPeer::dispatch(const ClientDenied &msg) {
 void LegacyPeer::dispatch(const ClientRegistered &msg) {
     QVariantMap m;
     m["MsgType"] = "ClientInitAck";
-    m["CoreFeatures"] = msg.coreFeatures;
+    if (hasFeature(Quassel::Feature::ExtendedFeatures)) {
+        m["FeatureList"] = msg.features.toStringList();
+    }
+    else {
+        m["CoreFeatures"] = static_cast<quint32>(msg.features.toLegacyFeatures());
+    }
     m["StorageBackends"] = msg.backendInfo;
+    if (hasFeature(Quassel::Feature::Authenticators)) {
+        m["Authenticators"] = msg.authenticatorInfo;
+    }
 
     // FIXME only in compat mode
     m["ProtocolVersion"] = protocolVersion;
@@ -264,6 +291,10 @@ void LegacyPeer::dispatch(const SetupData &msg)
     map["AdminPasswd"] = msg.adminPassword;
     map["Backend"] = msg.backend;
     map["ConnectionProperties"] = msg.setupData;
+
+    // Auth backend properties.
+    map["Authenticator"] = msg.authenticator;
+    map["AuthProperties"] = msg.authSetupData;
 
     QVariantMap m;
     m["MsgType"] = "CoreSetupData";

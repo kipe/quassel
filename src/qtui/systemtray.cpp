@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This file is free software; you can redistribute it and/or modify     *
@@ -39,9 +39,9 @@ SystemTray::SystemTray(QWidget *parent)
     _mode(Invalid),
     _state(Passive),
     _shouldBeVisible(true),
-    _passiveIcon(QIcon::fromTheme("quassel-inactive", QIcon(":/icons/quassel-inactive.png"))),
+    _passiveIcon(QIcon::fromTheme("inactive-quassel", QIcon(":/icons/inactive-quassel.png"))),
     _activeIcon(QIcon::fromTheme("quassel", QIcon(":/icons/quassel.png"))),
-    _needsAttentionIcon(QIcon::fromTheme("quassel-message", QIcon(":/icons/quassel-message.png"))),
+    _needsAttentionIcon(QIcon::fromTheme("message-quassel", QIcon(":/icons/message-quassel.png"))),
     _trayMenu(0),
     _associatedWidget(parent)
 {

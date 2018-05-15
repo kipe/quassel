@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -171,14 +171,23 @@ void CoreAuthHandler::handle(const RegisterClient &msg)
         return;
     }
 
+    _peer->setFeatures(std::move(msg.features));
+    _peer->setBuildDate(msg.buildDate);
+    _peer->setClientVersion(msg.clientVersion);
+
     QVariantList backends;
+    QVariantList authenticators;
     bool configured = Core::isConfigured();
-    if (!configured)
+    if (!configured) {
         backends = Core::backendInfo();
+        if (_peer->hasFeature(Quassel::Feature::Authenticators)) {
+            authenticators = Core::authenticatorInfo();
+        }
+    }
+
+    _peer->dispatch(ClientRegistered(Quassel::Features{}, configured, backends, authenticators, useSsl));
 
     // useSsl is only used for the legacy protocol
-    _peer->dispatch(ClientRegistered(Quassel::features(), configured, backends, useSsl));
-
     if (_legacy && useSsl)
         startSsl();
 
@@ -191,7 +200,15 @@ void CoreAuthHandler::handle(const SetupData &msg)
     if (!checkClientRegistered())
         return;
 
-    QString result = Core::setup(msg.adminUser, msg.adminPassword, msg.backend, msg.setupData);
+    // The default parameter to authenticator is Database.
+    // Maybe this should be hardcoded elsewhere, i.e. as a define.
+    QString authenticator = msg.authenticator;
+    quInfo() << "[" << authenticator << "]";
+    if (authenticator.trimmed().isEmpty()) {
+        authenticator = QString("Database");
+    }
+
+    QString result = Core::setup(msg.adminUser, msg.adminPassword, msg.backend, msg.setupData, authenticator, msg.authSetupData);
     if (!result.isEmpty())
         _peer->dispatch(SetupFailed(result));
     else
@@ -204,7 +221,19 @@ void CoreAuthHandler::handle(const Login &msg)
     if (!checkClientRegistered())
         return;
 
+    if (!Core::isConfigured()) {
+        qWarning() << qPrintable(tr("Client")) << qPrintable(socket()->peerAddress().toString()) << qPrintable(tr("attempted to login before the core was configured, rejecting."));
+        _peer->dispatch(ClientDenied(tr("<b>Attempted to login before core was configured!</b><br>The core must be configured before attempting to login.")));
+        return;
+    }
+
+    // First attempt local auth using the real username and password.
+    // If that fails, move onto the auth provider.
     UserId uid = Core::validateUser(msg.user, msg.password);
+    if (uid == 0) {
+        uid = Core::authenticateUser(msg.user, msg.password);
+    }
+
     if (uid == 0) {
         quInfo() << qPrintable(tr("Invalid login attempt from %1 as \"%2\"").arg(socket()->peerAddress().toString(), msg.user));
         _peer->dispatch(LoginFailed(tr("<b>Invalid username or password!</b><br>The username/password combination you supplied could not be found in the database.")));
@@ -213,6 +242,15 @@ void CoreAuthHandler::handle(const Login &msg)
     _peer->dispatch(LoginSuccess());
 
     quInfo() << qPrintable(tr("Client %1 initialized and authenticated successfully as \"%2\" (UserId: %3).").arg(socket()->peerAddress().toString(), msg.user, QString::number(uid.toInt())));
+
+    const auto &clientFeatures = _peer->features();
+    auto unsupported = clientFeatures.toStringList(false);
+    if (!unsupported.isEmpty()) {
+        quInfo() << qPrintable(tr("Client does not support the following features: %1").arg(unsupported.join(", ")));
+    }
+    if (!clientFeatures.unknownFeatures().isEmpty()) {
+        quInfo() << qPrintable(tr("Client supports unknown features: %1").arg(clientFeatures.unknownFeatures().join(", ")));
+    }
 
     disconnect(socket(), 0, this, 0);
     disconnect(_peer, 0, this, 0);

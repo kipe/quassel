@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -85,6 +85,52 @@ IdentityEditWidget::IdentityEditWidget(QWidget *parent)
     ui.sslCertGroupBox->setAcceptDrops(true);
     ui.sslCertGroupBox->installEventFilter(this);
 #endif
+
+    if (Client::isCoreFeatureEnabled(Quassel::Feature::AwayFormatTimestamp)) {
+        // Core allows formatting %%timestamp%% messages in away strings.  Update tooltips.
+        QString strFormatTooltip;
+        QTextStream formatTooltip( &strFormatTooltip, QIODevice::WriteOnly );
+        formatTooltip << "<qt><style>.bold { font-weight: bold; } "
+                         ".italic { font-style: italic; }</style>";
+
+        // Function to add a row to the tooltip table
+        auto addRow = [&](const QString& key, const QString& value, bool condition) {
+            if (condition) {
+                formatTooltip << "<tr><td class='bold' align='right'>"
+                        << key << "</td><td>" << value << "</td></tr>";
+            }
+        };
+
+        // Original tooltip goes here
+        formatTooltip << "<p>%1</p>";
+        // New timestamp formatting guide here
+        formatTooltip << "<p>" << tr("You can add date/time to this message "
+                               "using the syntax: "
+                               "<br/>%%<span class='italic'>&lt;format&gt;</span>%%, where "
+                               "<span class='italic'>&lt;format&gt;</span> is:") << "</p>";
+        formatTooltip << "<table cellspacing='5' cellpadding='0'>";
+        addRow("hh", tr("the hour"), true);
+        addRow("mm", tr("the minutes"), true);
+        addRow("ss", tr("seconds"), true);
+        addRow("AP", tr("AM/PM"), true);
+        addRow("dd", tr("day"), true);
+        addRow("MM", tr("month"), true);
+#if QT_VERSION > 0x050000
+        // Alas, this was only added in Qt 5.  We don't know what version the core has, just hope
+        // for the best (Qt 4 will soon be dropped).
+        addRow("t", tr("current timezone"), true);
+#endif
+        formatTooltip << "</table>";
+        formatTooltip << "<p>" << tr("Example: Away since %%hh:mm%% on %%dd.MM%%.") << "</p>";
+        formatTooltip << "<p>" << tr("%%%% without anything inside represents %%.  Other format "
+                                     "codes are available.") << "</p>";
+        formatTooltip << "</qt>";
+
+        // Split up the message to allow re-using translations:
+        // [Original tool-tip]  [Timestamp format message]
+        ui.awayReason->setToolTip(strFormatTooltip.arg(ui.awayReason->toolTip()));
+        ui.detachAwayEnabled->setToolTip(strFormatTooltip.arg(ui.detachAwayEnabled->toolTip()));
+    } // else: Do nothing, leave the original translated string
 }
 
 
@@ -346,7 +392,16 @@ QSslKey IdentityEditWidget::keyByFilename(const QString &filename)
     keyFile.close();
 
     for (int i = 0; i < 2; i++) {
+#if QT_VERSION >= 0x050500
+        // On Qt5.5+, support QSsl::KeyAlgorithm::Rsa (1), QSsl::KeyAlgorithm::Dsa (2), and QSsl::KeyAlgorithm::Ec (3)
+        for (int j = 1; j < 4; j++) {
+#elif QT_VERSION >= 0x050000
+        // On Qt5.0-Qt5.4, support QSsl::KeyAlgorithm::Rsa (1) and QSsl::KeyAlgorithm::Dsa (2) (Ec wasn't added until 5.5)
+        for (int j = 1; j < 3; j++) {
+#else
+        // On Qt4, support QSsl::KeyAlgorithm::Rsa (0) and QSsl::KeyAlgorithm::Dsa (1) (Qt4 uses different indices for the values)
         for (int j = 0; j < 2; j++) {
+#endif
             key = QSslKey(keyRaw, (QSsl::KeyAlgorithm)j, (QSsl::EncodingFormat)i);
             if (!key.isNull())
                 goto returnKey;
@@ -354,6 +409,12 @@ QSslKey IdentityEditWidget::keyByFilename(const QString &filename)
     }
     QMessageBox::information(this, tr("Failed to read key"), tr("Failed to read the key file. It is either incompatible or invalid. Note that the key file must not have a passphrase."));
 returnKey:
+#if QT_VERSION >= 0x050500
+    if(!key.isNull() && key.algorithm() == QSsl::KeyAlgorithm::Ec && !Client::isCoreFeatureEnabled(Quassel::Feature::EcdsaCertfpKeys)) {
+        QMessageBox::information(this, tr("Core does not support ECDSA keys"), tr("You loaded an ECDSA key, but the core does not support ECDSA keys. Please contact the core administrator."));
+        key.clear();
+    }
+#endif
     return key;
 }
 
@@ -369,11 +430,16 @@ void IdentityEditWidget::showKeyState(const QSslKey &key)
         case QSsl::Rsa:
             ui.keyTypeLabel->setText(tr("RSA"));
             break;
+#if QT_VERSION >= 0x050500
+        case QSsl::Ec:
+            ui.keyTypeLabel->setText(tr("ECDSA"));
+            break;
+#endif
         case QSsl::Dsa:
             ui.keyTypeLabel->setText(tr("DSA"));
             break;
         default:
-            ui.keyTypeLabel->setText(tr("No Key loaded"));
+            ui.keyTypeLabel->setText(tr("Invalid key or no key loaded"));
         }
         ui.clearOrLoadKeyButton->setText(tr("Clear"));
     }

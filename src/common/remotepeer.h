@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -48,6 +48,9 @@ public:
     virtual QString protocolName() const = 0;
     virtual QString description() const;
     virtual quint16 enabledFeatures() const { return 0; }
+
+    virtual QString address() const;
+    virtual quint16 port() const;
 
     bool isOpen() const;
     bool isSecure() const;

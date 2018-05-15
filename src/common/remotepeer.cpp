@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -89,6 +89,22 @@ QString RemotePeer::description() const
         return socket()->peerAddress().toString();
 
     return QString();
+}
+
+QString RemotePeer::address() const
+{
+    if (socket())
+        return socket()->peerAddress().toString();
+
+    return QString();
+}
+
+quint16 RemotePeer::port() const
+{
+    if (socket())
+        return socket()->peerPort();
+
+    return 0;
 }
 
 
@@ -192,8 +208,15 @@ void RemotePeer::close(const QString &reason)
 void RemotePeer::onReadyRead()
 {
     QByteArray msg;
-    while (readMessage(msg))
+    while (readMessage(msg)) {
+        if (SignalProxy::current())
+            SignalProxy::current()->setSourcePeer(this);
+
         processMessage(msg);
+
+        if (SignalProxy::current())
+            SignalProxy::current()->setSourcePeer(nullptr);
+    }
 }
 
 

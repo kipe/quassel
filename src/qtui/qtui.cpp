@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -32,10 +32,6 @@
 #include "toolbaractionprovider.h"
 #include "types.h"
 #include "util.h"
-
-#ifdef Q_WS_X11
-#  include <QX11Info>
-#endif
 
 QtUi *QtUi::_instance = 0;
 MainWin *QtUi::_mainWin = 0;

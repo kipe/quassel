@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -43,6 +43,17 @@ QVariant CoreSettings::storageSettings(const QVariant &def)
     return localValue("StorageSettings", def);
 }
 
+
+QVariant CoreSettings::authSettings(const QVariant &def)
+{
+    return localValue("AuthSettings", def);
+}
+
+
+void CoreSettings::setAuthSettings(const QVariant &data)
+{
+    setLocalValue("AuthSettings", data);
+}
 
 // FIXME remove
 QVariant CoreSettings::oldDbSettings()

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,8 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CLIENTAUTHHANDLER_H
-#define CLIENTAUTHHANDLER_H
+#pragma once
 
 #include "compressor.h"
 #include "authhandler.h"
@@ -34,13 +33,15 @@ class ClientAuthHandler : public AuthHandler
     Q_OBJECT
 
 public:
-    ClientAuthHandler(CoreAccount account, QObject *parent = 0);
-
     enum DigestVersion {
         Md5,
         Sha2_512,
         Latest=Sha2_512
     };
+
+    ClientAuthHandler(CoreAccount account, QObject *parent = 0);
+
+    Peer *peer() const;
 
 public slots:
     void connectToCore();
@@ -70,7 +71,7 @@ signals:
 #endif
 
     void encrypted(bool isEncrypted = true);
-    void startCoreSetup(const QVariantList &backendInfo);
+    void startCoreSetup(const QVariantList &backendInfo, const QVariantList &authenticatorInfo);
     void coreSetupSuccessful();
     void coreSetupFailed(const QString &error);
 
@@ -113,10 +114,9 @@ private:
     RemotePeer *_peer;
     bool _coreConfigured;
     QVariantList _backendInfo;
+    QVariantList _authenticatorInfo;
     CoreAccount _account;
     bool _probing;
     bool _legacy;
     quint8 _connectionFeatures;
 };
-
-#endif

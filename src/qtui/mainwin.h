@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -120,7 +120,7 @@ private slots:
     void showAboutDlg();
     void showChannelList(NetworkId netId = NetworkId());
     void showCoreConnectionDlg();
-    void showCoreConfigWizard(const QVariantList &);
+    void showCoreConfigWizard(const QVariantList &, const QVariantList &);
     void showCoreInfoDlg();
     void showAwayLog();
     void showSettingsDlg();
@@ -192,6 +192,7 @@ private:
     void setupChatMonitor();
     void setupInputWidget();
     void setupTopicWidget();
+    void setupTransferWidget();
     void setupViewMenuTail();
     void setupStatusBar();
     void setupSystray();

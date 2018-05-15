@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -202,7 +202,7 @@ void TopicWidget::updateResizeMode()
 void TopicWidget::clickableActivated(const Clickable &click)
 {
     NetworkId networkId = selectionModel()->currentIndex().data(NetworkModel::NetworkIdRole).value<NetworkId>();
-    UiStyle::StyledString sstr = GraphicalUi::uiStyle()->styleString(GraphicalUi::uiStyle()->mircToInternal(_topic), UiStyle::PlainMsg);
+    UiStyle::StyledString sstr = GraphicalUi::uiStyle()->styleString(GraphicalUi::uiStyle()->mircToInternal(_topic), UiStyle::FormatType::PlainMsg);
     click.activate(networkId, sstr.plainText);
 }
 

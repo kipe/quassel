@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -116,6 +116,23 @@ public:
     inline CutoffMode senderCutoffMode() const { return _cutoffMode; }
     inline void setSenderCutoffMode(CutoffMode mode) { _cutoffMode = mode; }
 
+    /**
+     * Gets whether to re-add hidden brackets around sender for all message types
+     *
+     * Used within the Chat Monitor as the normal message prefixes are overridden.
+     *
+     * @return Whether to re-add hidden brackets around sender for all message types
+     */
+    inline bool alwaysBracketSender() const { return _alwaysBracketSender; }
+    /**
+     * Sets whether to re-add hidden brackets around sender for all message types
+     *
+     * @see ChatScene::alwaysBracketSender()
+     *
+     * @param brackets Sets whether to re-add hidden brackets around sender for all message types
+     */
+    inline void setAlwaysBracketSender(bool alwaysBracket) { _alwaysBracketSender = alwaysBracket; }
+
     QString selection() const;
     bool hasSelection() const;
     bool hasGlobalSelection() const;
@@ -186,6 +203,11 @@ private slots:
     void showSenderBracketsChanged();
 
     /**
+     * Updates the local setting cache of whether or not to use the custom timestamp format
+     */
+    void useCustomTimestampFormatChanged();
+
+    /**
      * Updates the local setting cache of the timestamp format string
      */
     void timestampFormatStringChanged();
@@ -229,6 +251,8 @@ private:
     qreal _firstColHandlePos, _secondColHandlePos;
     int _defaultFirstColHandlePos, _defaultSecondColHandlePos;
     CutoffMode _cutoffMode;
+    /// Whether to re-add hidden brackets around sender for all message types
+    bool _alwaysBracketSender;
 
     ChatItem *_selectingItem;
     int _selectionStartCol, _selectionMinCol;
@@ -247,6 +271,7 @@ private:
 
     bool _showSenderBrackets;  /// If true, show brackets around sender names
 
+    bool _useCustomTimestampFormat; /// If true, use the custom timestamp format
     QString _timestampFormatString; /// Format of the timestamp string
     bool _timestampHasBrackets;     /// If true, timestamp format has [brackets] of some sort
 

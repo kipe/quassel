@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -32,6 +32,7 @@
 
 #include "client.h"
 #include "clientsettings.h"
+#include "logger.h"
 #include "peerfactory.h"
 
 #if QT_VERSION < 0x050000
@@ -42,13 +43,19 @@ using namespace Protocol;
 
 ClientAuthHandler::ClientAuthHandler(CoreAccount account, QObject *parent)
     : AuthHandler(parent),
-    _peer(0),
+    _peer(nullptr),
     _account(account),
     _probing(false),
     _legacy(false),
     _connectionFeatures(0)
 {
 
+}
+
+
+Peer *ClientAuthHandler::peer() const
+{
+    return _peer;
 }
 
 
@@ -75,10 +82,21 @@ void ClientAuthHandler::connectToCore()
     QTcpSocket *socket = new QTcpSocket(this);
 #endif
 
-// TODO: Handle system proxy
 #ifndef QT_NO_NETWORKPROXY
-    if (_account.useProxy()) {
-        QNetworkProxy proxy(_account.proxyType(), _account.proxyHostName(), _account.proxyPort(), _account.proxyUser(), _account.proxyPassword());
+    QNetworkProxy proxy;
+    proxy.setType(_account.proxyType());
+    if (_account.proxyType() == QNetworkProxy::Socks5Proxy ||
+            _account.proxyType() == QNetworkProxy::HttpProxy) {
+        proxy.setHostName(_account.proxyHostName());
+        proxy.setPort(_account.proxyPort());
+        proxy.setUser(_account.proxyUser());
+        proxy.setPassword(_account.proxyPassword());
+    }
+
+    if (_account.proxyType() == QNetworkProxy::DefaultProxy) {
+        QNetworkProxyFactory::setUseSystemConfiguration(true);
+    } else {
+        QNetworkProxyFactory::setUseSystemConfiguration(false);
         socket->setProxy(proxy);
     }
 #endif
@@ -288,7 +306,7 @@ void ClientAuthHandler::startRegistration()
     useSsl = _account.useSsl();
 #endif
 
-    _peer->dispatch(RegisterClient(Quassel::buildInfo().fancyVersionString, Quassel::buildInfo().commitDate, useSsl));
+    _peer->dispatch(RegisterClient(Quassel::Features{}, Quassel::buildInfo().fancyVersionString, Quassel::buildInfo().commitDate, useSsl));
 }
 
 
@@ -303,8 +321,9 @@ void ClientAuthHandler::handle(const ClientRegistered &msg)
 {
     _coreConfigured = msg.coreConfigured;
     _backendInfo = msg.backendInfo;
+    _authenticatorInfo = msg.authenticatorInfo;
 
-    Client::setCoreFeatures(static_cast<Quassel::Features>(msg.coreFeatures));
+    _peer->setFeatures(std::move(msg.features));
 
     // The legacy protocol enables SSL at this point
     if(_legacy && _account.useSsl())
@@ -316,12 +335,21 @@ void ClientAuthHandler::handle(const ClientRegistered &msg)
 
 void ClientAuthHandler::onConnectionReady()
 {
+    const auto &coreFeatures = _peer->features();
+    auto unsupported = coreFeatures.toStringList(false);
+    if (!unsupported.isEmpty()) {
+        quInfo() << qPrintable(tr("Core does not support the following features: %1").arg(unsupported.join(", ")));
+    }
+    if (!coreFeatures.unknownFeatures().isEmpty()) {
+        quInfo() << qPrintable(tr("Core supports unknown features: %1").arg(coreFeatures.unknownFeatures().join(", ")));
+    }
+
     emit connectionReady();
     emit statusMessage(tr("Connected to %1").arg(_account.accountName()));
 
     if (!_coreConfigured) {
         // start wizard
-        emit startCoreSetup(_backendInfo);
+        emit startCoreSetup(_backendInfo, _authenticatorInfo);
     }
     else // TODO: check if we need LoginEnabled
         login();
@@ -487,7 +515,7 @@ void ClientAuthHandler::onSslErrors()
     default:
         qWarning() << "Certificate digest version" << QString(knownDigestVersion) << "is not supported";
     }
-    
+
     if (knownDigest != calculatedDigest) {
         bool accepted = false;
         bool permanently = false;

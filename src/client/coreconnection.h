@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -73,7 +73,7 @@ public:
     //! Check if we consider the last connect as reconnect
     bool wasReconnect() const { return _wasReconnect; }
 
-    QPointer<Peer> peer() { return _peer; }
+    QPointer<Peer> peer() const;
 
 public slots:
     bool connectToCore(AccountId = 0);
@@ -97,7 +97,7 @@ signals:
     void progressValueChanged(int value);
     void progressTextChanged(const QString &);
 
-    void startCoreSetup(const QVariantList &backendInfo);
+    void startCoreSetup(const QVariantList &backendInfo, const QVariantList &authenticatorInfo);
     void coreSetupSuccess();
     void coreSetupFailed(const QString &error);
 

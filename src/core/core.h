@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,8 +18,10 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CORE_H
-#define CORE_H
+#pragma once
+
+#include <memory>
+#include <vector>
 
 #include <QDateTime>
 #include <QString>
@@ -34,7 +36,9 @@
 #  include <QTcpServer>
 #endif
 
+#include "authenticator.h"
 #include "bufferinfo.h"
+#include "deferredptr.h"
 #include "message.h"
 #include "oidentdconfiggenerator.h"
 #include "sessionthread.h"
@@ -74,6 +78,36 @@ public:
         return instance()->_storage->validateUser(userName, password);
     }
 
+    //! Authenticate user against auth backend
+    /**
+     * \param userName The user's login name
+     * \param password The user's uncrypted password
+     * \return The user's ID if valid; 0 otherwise
+     */
+    static inline UserId authenticateUser(const QString &userName, const QString &password) {
+        return instance()->_authenticator->validateUser(userName, password);
+    }
+
+    //! Add a new user, exposed so auth providers can call this without being the storage.
+    /**
+     * \param userName The user's login name
+     * \param password The user's uncrypted password
+     * \param authenticator The name of the auth provider service used to log the user in, defaults to "Database".
+     * \return The user's ID if valid; 0 otherwise
+     */
+    static inline UserId addUser(const QString &userName, const QString &password, const QString &authenticator = "Database") {
+        return instance()->_storage->addUser(userName, password, authenticator);
+    }
+
+    //! Does a comparison test against the authenticator in the database and the authenticator currently in use for a UserID.
+    /**
+     * \param userid The user's ID (note: not login name).
+     * \param authenticator The name of the auth provider service used to log the user in, defaults to "Database".
+     * \return True if the userid was configured with the passed authenticator, false otherwise.
+     */
+    static inline bool checkAuthProvider(const UserId userid, const QString &authenticator) {
+        return instance()->_storage->getUserAuthenticator(userid) == authenticator;
+    }
 
     //! Change a user's password
     /**
@@ -82,6 +116,13 @@ public:
      * \return true, if the password change was successful
      */
     static bool changeUserPassword(UserId userId, const QString &password);
+
+    //! Check if we can change a user password.
+    /**
+     * \param userID     The user's ID
+     * \return true, if we can change their password, false otherwise
+     */
+    static bool canChangeUserPassword(UserId userId);
 
     //! Store a user setting persistently
     /**
@@ -452,6 +493,20 @@ public:
         return instance()->_storage->setBufferLastSeenMsg(user, bufferId, msgId);
     }
 
+    //! Get the auth username associated with a userId
+    /** \param user  The user to retrieve the username for
+     *  \return      The username for the user
+     */
+    static inline QString getAuthUserName(UserId user) {
+        return instance()->_storage->getAuthUserName(user);
+    }
+
+    //! Get a usable sysident for the given user in oidentd-strict mode
+    /** \param user    The user to retrieve the sysident for
+     *  \return The authusername
+     */
+    QString strictSysIdent(UserId user) const;
+
 
     //! Get a Hash of all last seen message ids
     /** This Method is called when the Quassel Core is started to restore the lastSeenMsgIds
@@ -490,6 +545,39 @@ public:
         return instance()->_storage->bufferMarkerLineMsgIds(user);
     }
 
+    //! Update the BufferActivity for a Buffer
+    /** This Method is used to make the activity state of a Buffer persistent
+     *  \note This method is threadsafe.
+     *
+     * \param user      The Owner of that Buffer
+     * \param bufferId  The buffer id
+     * \param MsgId     The Message id where the marker line should be placed
+     */
+    static inline void setBufferActivity(UserId user, BufferId bufferId, Message::Types activity) {
+        return instance()->_storage->setBufferActivity(user, bufferId, activity);
+    }
+
+
+    //! Get a Hash of all buffer activity states
+    /** This Method is called when the Quassel Core is started to restore the BufferActivity
+     *  \note This method is threadsafe.
+     *
+     * \param user      The Owner of the buffers
+     */
+    static inline QHash<BufferId, Message::Types> bufferActivities(UserId user) {
+        return instance()->_storage->bufferActivities(user);
+    }
+
+    //! Get the bitset of buffer activity states for a buffer
+    /** This method is used to load the activity state of a buffer when its last seen message changes.
+     *  \note This method is threadsafe.
+     *
+     * \param bufferId The buffer
+     * \param lastSeenMsgId     The last seen message
+     */
+    static inline Message::Types bufferActivity(BufferId bufferId, MsgId lastSeenMsgId) {
+        return instance()->_storage->bufferActivity(bufferId, lastSeenMsgId);
+    }
 
     static inline QDateTime startTime() { return instance()->_startTime; }
     static inline bool isConfigured() { return instance()->_configured; }
@@ -502,9 +590,12 @@ public:
      */
     static bool reloadCerts();
 
-    static QVariantList backendInfo();
+    static void cacheSysIdent();
 
-    static QString setup(const QString &adminUser, const QString &adminPassword, const QString &backend, const QVariantMap &setupData);
+    static QVariantList backendInfo();
+    static QVariantList authenticatorInfo();
+
+    static QString setup(const QString &adminUser, const QString &adminPassword, const QString &backend, const QVariantMap &setupData, const QString &authenticator, const QVariantMap &authSetupMap);
 
     static inline QTimer &syncTimer() { return instance()->_storageSyncTimer; }
 
@@ -518,7 +609,7 @@ public slots:
      */
     void syncStorage();
     void setupInternalClientSession(InternalPeer *clientConnection);
-    QString setupCore(const QString &adminUser, const QString &adminPassword, const QString &backend, const QVariantMap &setupData);
+    QString setupCore(const QString &adminUser, const QString &adminPassword, const QString &backend, const QVariantMap &setupData, const QString &authenticator, const QVariantMap &authSetupMap);
 
 signals:
     //! Sent when a BufferInfo is updated in storage.
@@ -537,6 +628,7 @@ private slots:
     void clientDisconnected();
 
     bool initStorage(const QString &backend, const QVariantMap &settings, bool setup = false);
+    bool initAuthenticator(const QString &backend, const QVariantMap &settings, bool setup = false);
 
     void socketError(QAbstractSocket::SocketError err, const QString &errorString);
     void setupClientSession(RemotePeer *, UserId);
@@ -554,20 +646,36 @@ private:
     //void processCoreSetup(QTcpSocket *socket, QVariantMap &msg);
     QString setupCoreForInternalUsage();
 
-    void registerStorageBackends();
-    bool registerStorageBackend(Storage *);
-    void unregisterStorageBackends();
-    void unregisterStorageBackend(Storage *);
-    bool selectBackend(const QString &backend);
     bool createUser();
-    void saveBackendSettings(const QString &backend, const QVariantMap &settings);
-    QVariantMap promptForSettings(const Storage *storage);
+
+    template<typename Storage>
+    void registerStorageBackend();
+
+    template<typename Authenticator>
+    void registerAuthenticator();
+
+    void registerStorageBackends();
+    void registerAuthenticators();
+
+    DeferredSharedPtr<Storage>       storageBackend(const QString& backendId) const;
+    DeferredSharedPtr<Authenticator> authenticator(const QString& authenticatorId) const;
+
+    bool selectBackend(const QString &backend);
+    bool selectAuthenticator(const QString &backend);
+
+    bool saveBackendSettings(const QString &backend, const QVariantMap &settings);
+    void saveAuthenticatorSettings(const QString &backend, const QVariantMap &settings);
+
+    template<typename Backend>
+    QVariantMap promptForSettings(const Backend *backend);
 
 private:
     QSet<CoreAuthHandler *> _connectingClients;
     QHash<UserId, SessionThread *> _sessions;
-    Storage *_storage;
+    DeferredSharedPtr<Storage>       _storage;        ///< Active storage backend
+    DeferredSharedPtr<Authenticator> _authenticator;  ///< Active authenticator
     QTimer _storageSyncTimer;
+    QMap<UserId, QString> _authUserNames;
 
 #ifdef HAVE_SSL
     SslServer _server, _v6server;
@@ -575,20 +683,18 @@ private:
     QTcpServer _server, _v6server;
 #endif
 
-    OidentdConfigGenerator *_oidentdConfigGenerator;
+    OidentdConfigGenerator *_oidentdConfigGenerator {nullptr};
 
-    QHash<QString, Storage *> _storageBackends;
+    std::vector<DeferredSharedPtr<Storage>>       _registeredStorageBackends;
+    std::vector<DeferredSharedPtr<Authenticator>> _registeredAuthenticators;
 
     QDateTime _startTime;
 
     bool _configured;
 
-    static AbstractSqlMigrationReader *getMigrationReader(Storage *storage);
-    static AbstractSqlMigrationWriter *getMigrationWriter(Storage *storage);
+    static std::unique_ptr<AbstractSqlMigrationReader> getMigrationReader(Storage *storage);
+    static std::unique_ptr<AbstractSqlMigrationWriter> getMigrationWriter(Storage *storage);
     static void stdInEcho(bool on);
     static inline void enableStdInEcho() { stdInEcho(true); }
     static inline void disableStdInEcho() { stdInEcho(false); }
 };
-
-
-#endif

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -45,6 +45,8 @@ private slots:
     void handleExec(const BufferInfo &bufferInfo, const QString &execString);
     void handleJoin(const BufferInfo &bufferInfo, const QString &text);
     void handleQuery(const BufferInfo &bufferInfo, const QString &text);
+    void handleIgnore(const BufferInfo &bufferInfo, const QString &text);
+    void handleList(const BufferInfo &bufferInfo, const QString &text);
     void defaultHandler(const QString &cmd, const BufferInfo &bufferInfo, const QString &text);
 
 private:

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -64,6 +64,8 @@ QVariant AliasesModel::data(const QModelIndex &index, int role) const
                       " - <b>$i..j</b> represents the i'th to j'th parameter separated by spaces.<br />"
                       " - <b>$i..</b> represents all parameters from i on separated by spaces.<br />"
                       " - <b>$i:hostname</b> represents the hostname of the user identified by the i'th parameter or a * if unknown.<br />"
+                      " - <b>$i:ident</b> represents the ident of the user identified by the i'th parameter or a * if unknown.<br />"
+                      " - <b>$i:account</b> represents the account of the user identified by the i'th parameter or a * if logged out or unknown.<br />"
                       " - <b>$0</b> the whole string.<br />"
                       " - <b>$nick</b> your current nickname<br />"
                       " - <b>$channel</b> the name of the selected channel<br /><br />"

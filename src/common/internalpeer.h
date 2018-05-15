@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -44,6 +44,9 @@ public:
 
     Protocol::Type protocol() const { return Protocol::InternalProtocol; }
     QString description() const;
+
+    virtual QString address() const;
+    virtual quint16 port() const;
 
     SignalProxy *signalProxy() const;
     void setSignalProxy(SignalProxy *proxy);

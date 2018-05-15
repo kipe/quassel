@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,6 +23,9 @@
 #include "qtui.h"
 #include "backlogsettings.h"
 
+// For backlog requester types
+#include "backlogrequester.h"
+
 BacklogSettingsPage::BacklogSettingsPage(QWidget *parent)
     : SettingsPage(tr("Interface"), tr("Backlog Fetching"), parent)
 {
@@ -45,7 +48,7 @@ bool BacklogSettingsPage::hasDefaults() const
 
 void BacklogSettingsPage::defaults()
 {
-    ui.requesterType->setCurrentIndex(0);
+    ui.requesterType->setCurrentIndex(BacklogRequester::PerBufferUnread - 1);
 
     SettingsPage::defaults();
 }

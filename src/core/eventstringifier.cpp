@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -259,7 +259,13 @@ void EventStringifier::processIrcEventJoin(IrcEvent *e)
     if (e->testFlag(EventManager::Netsplit))
         return;
 
-    displayMsg(e, Message::Join, e->params()[0], e->prefix(), e->params()[0]);
+    Message::Flag msgFlags = Message::Flag::None;
+    if (e->testFlag(EventManager::Self)) {
+        // Mark the message as Self
+        msgFlags = Message::Self;
+    }
+
+    displayMsg(e, Message::Join, e->params()[0], e->prefix(), e->params()[0], msgFlags);
 }
 
 
@@ -275,7 +281,13 @@ void EventStringifier::processIrcEventKick(IrcEvent *e)
         if (e->params().count() > 2)
             msg += " " + e->params().at(2);
 
-        displayMsg(e, Message::Kick, msg, e->prefix(), channel);
+        Message::Flag msgFlags = Message::Flag::None;
+        if (e->testFlag(EventManager::Self)) {
+            // Mark the message as Self
+            msgFlags = Message::Self;
+        }
+
+        displayMsg(e, Message::Kick, msg, e->prefix(), channel, msgFlags);
     }
 }
 
@@ -289,7 +301,13 @@ void EventStringifier::processIrcEventMode(IrcEvent *e)
     else {
         // User Modes
         // FIXME: redirect
-        displayMsg(e, Message::Mode, e->params().join(" "), e->prefix());
+
+        Message::Flag msgFlags = Message::Flag::None;
+        if (e->testFlag(EventManager::Self)) {
+            // Mark the message as Self
+            msgFlags = Message::Self;
+        }
+        displayMsg(e, Message::Mode, e->params().join(" "), e->prefix(), QString(), msgFlags);
     }
 }
 
@@ -307,11 +325,22 @@ void EventStringifier::processIrcEventNick(IrcEvent *e)
     }
 
     QString newnick = e->params().at(0);
-    QString oldnick = ircuser->nick();
 
-    QString sender = e->network()->isMyNick(oldnick) ? newnick : e->prefix();
-    foreach(const QString &channel, ircuser->channels())
-    displayMsg(e, Message::Nick, newnick, sender, channel);
+    QString sender;
+    Message::Flag msgFlags = Message::Flag::None;
+    if (e->testFlag(EventManager::Self)) {
+        // Treat the sender as the new nickname, mark the message as Self
+        sender = newnick;
+        msgFlags = Message::Self;
+    } else {
+        // Take the sender from the event prefix, don't mark the message
+        sender = e->prefix();
+    }
+
+    // Announce to all channels the IrcUser is in
+    foreach(const QString &channel, ircuser->channels()) {
+        displayMsg(e, Message::Nick, newnick, sender, channel, msgFlags);
+    }
 }
 
 
@@ -323,7 +352,14 @@ void EventStringifier::processIrcEventPart(IrcEvent *e)
     QString channel = e->params().at(0);
     QString msg = e->params().count() > 1 ? e->params().at(1) : QString();
 
-    displayMsg(e, Message::Part, msg, e->prefix(), channel);
+
+    Message::Flag msgFlags = Message::Flag::None;
+    if (e->testFlag(EventManager::Self)) {
+        // Mark the message as Self
+        msgFlags = Message::Self;
+    }
+
+    displayMsg(e, Message::Part, msg, e->prefix(), channel, msgFlags);
 }
 
 
@@ -345,15 +381,32 @@ void EventStringifier::processIrcEventQuit(IrcEvent *e)
     if (!ircuser)
         return;
 
-    foreach(const QString &channel, ircuser->channels())
-    displayMsg(e, Message::Quit, e->params().count() ? e->params().first() : QString(), e->prefix(), channel);
+
+    Message::Flag msgFlags = Message::Flag::None;
+    if (e->testFlag(EventManager::Self)) {
+        // Mark the message as Self
+        msgFlags = Message::Self;
+    }
+
+    // Announce to all channels the IrcUser is in
+    foreach(const QString &channel, ircuser->channels()) {
+        displayMsg(e, Message::Quit, e->params().count() ? e->params().first() : QString(),
+                   e->prefix(), channel, msgFlags);
+    }
 }
 
 
 void EventStringifier::processIrcEventTopic(IrcEvent *e)
 {
+    Message::Flag msgFlags = Message::Flag::None;
+    if (e->testFlag(EventManager::Self)) {
+        // Mark the message as Self
+        msgFlags = Message::Self;
+    }
+
     displayMsg(e, Message::Topic, tr("%1 has changed topic for %2 to: \"%3\"")
-        .arg(e->nick(), e->params().at(0), e->params().at(1)), QString(), e->params().at(0));
+        .arg(e->nick(), e->params().at(0), e->params().at(1)), QString(), e->params().at(0),
+               msgFlags);
 }
 
 void EventStringifier::processIrcEventError(IrcEvent *e)
@@ -545,10 +598,13 @@ void EventStringifier::processIrcEvent322(IrcEvent *e)
     switch (e->params().count()) {
     case 3:
         topic = e->params()[2];
+        [[clang::fallthrough]];
     case 2:
         userCount = e->params()[1].toUInt();
+        [[clang::fallthrough]];
     case 1:
         channelName = e->params()[0];
+        [[clang::fallthrough]];
     default:
         break;
     }
@@ -732,7 +788,9 @@ void EventStringifier::processCtcpEvent(CtcpEvent *e)
         return;
 
     if (e->testFlag(EventManager::Self)) {
-        displayMsg(e, Message::Action, tr("sending CTCP-%1 request to %2").arg(e->ctcpCmd(), e->target()), e->network()->myNick());
+        displayMsg(e, Message::Action,
+                   tr("sending CTCP-%1 request to %2").arg(e->ctcpCmd(), e->target()),
+                   e->network()->myNick(), QString(), Message::Flag::Self);
         return;
     }
 

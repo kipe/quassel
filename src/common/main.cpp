@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2016 by the Quassel Project                        *
+ *   Copyright (C) 2005-2018 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -19,6 +19,7 @@
  ***************************************************************************/
 
 #include <cstdlib>
+#include <memory>
 
 #include <QTextCodec>
 
@@ -109,7 +110,7 @@ int main(int argc, char **argv)
 # endif
 #endif
 
-    AbstractCliParser *cliParser;
+    std::shared_ptr<AbstractCliParser> cliParser;
 
 #ifdef HAVE_KDE4
     // We need to init KCmdLineArgs first
@@ -117,15 +118,15 @@ int main(int argc, char **argv)
         ki18n("A modern, distributed IRC client"));
     aboutData.addLicense(KAboutData::License_GPL_V2);
     aboutData.addLicense(KAboutData::License_GPL_V3);
-    aboutData.setBugAddress("http://bugs.quassel-irc.org/projects/quassel-irc/issues/new");
+    aboutData.setBugAddress("https://bugs.quassel-irc.org/projects/quassel-irc/issues/new");
     aboutData.setOrganizationDomain(Quassel::buildInfo().organizationDomain.toUtf8());
     KCmdLineArgs::init(argc, argv, &aboutData);
 
-    cliParser = new KCmdLineWrapper();
+    cliParser = std::make_shared<KCmdLineWrapper>();
 #elif defined HAVE_QT5
-    cliParser = new Qt5CliParser();
+    cliParser = std::make_shared<Qt5CliParser>();
 #else
-    cliParser = new CliParser();
+    cliParser = std::make_shared<CliParser>();
 #endif
     Quassel::setCliParser(cliParser);
 
@@ -163,10 +164,12 @@ int main(int argc, char **argv)
 #endif
     cliParser->addOption("logfile", 'l', "Log to a file", "path");
     cliParser->addOption("select-backend", 0, "Switch storage backend (migrating data if possible)", "backendidentifier");
+    cliParser->addOption("select-authenticator", 0, "Select authentication backend", "authidentifier");
     cliParser->addSwitch("add-user", 0, "Starts an interactive session to add a new core user");
     cliParser->addOption("change-userpass", 0, "Starts an interactive session to change the password of the user identified by <username>", "username");
     cliParser->addSwitch("oidentd", 0, "Enable oidentd integration");
     cliParser->addOption("oidentd-conffile", 0, "Set path to oidentd configuration file", "file");
+    cliParser->addSwitch("oidentd-strict", 0, "Use users' quasselcore username as ident reply. Ignores each user's configured ident setting. Only meaningful with --oidentd.");
 #ifdef HAVE_SSL
     cliParser->addSwitch("require-ssl", 0, "Require SSL for remote (non-loopback) client connections");
     cliParser->addOption("ssl-cert", 0, "Specify the path to the SSL Certificate", "path", "configdir/quasselCert.pem");
@@ -186,7 +189,7 @@ int main(int argc, char **argv)
 #if defined BUILD_CORE
     CoreApplication app(argc, argv);
 #elif defined BUILD_QTUI
-# if QT_VERSION >= 0x050600
+# if QT_VERSION >= 0x050600 && defined(Q_OS_WIN)
     QtUiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
 # if QT_VERSION >= 0x050700
@@ -194,7 +197,7 @@ int main(int argc, char **argv)
 # endif
     QtUiApplication app(argc, argv);
 #elif defined BUILD_MONO
-# if QT_VERSION >= 0x050600
+# if QT_VERSION >= 0x050600 && defined(Q_OS_WIN)
     MonolithicApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
 # if QT_VERSION >= 0x050700
@@ -207,7 +210,7 @@ int main(int argc, char **argv)
     // the non-KDE version parses after app has been instantiated
     if (!cliParser->init(app.arguments())) {
         cliParser->usage();
-        return false;
+        return EXIT_FAILURE;
     }
 #endif
 
