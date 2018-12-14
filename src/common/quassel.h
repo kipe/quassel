@@ -32,10 +32,14 @@
 #include <QStringList>
 
 #include "abstractcliparser.h"
+#include "abstractsignalwatcher.h"
+#include "singleton.h"
 
 class QFile;
 
-class Quassel : public QObject
+class Logger;
+
+class Quassel : public QObject, public Singleton<Quassel>
 {
     // TODO Qt5: Use Q_GADGET
     Q_OBJECT
@@ -131,15 +135,27 @@ public:
         SenderPrefixes,           ///< Show prefixes for senders in backlog
         RemoteDisconnect,         ///< Allow this peer to be remotely disconnected
         ExtendedFeatures,         ///< Extended features
+        LongTime,                 ///< Serialize time as 64-bit values
+        RichMessages,             ///< Real Name and Avatar URL in backlog
+        BacklogFilterType,        ///< BacklogManager supports filtering backlog by MessageType
 #if QT_VERSION >= 0x050500
         EcdsaCertfpKeys,          ///< ECDSA keys for CertFP in identities
 #endif
+        LongMessageId,            ///< 64-bit IDs for messages
+        SyncedCoreInfo,           ///< CoreInfo dynamically updated using signals
     };
     Q_ENUMS(Feature)
 
     class Features;
 
-    static Quassel *instance();
+    Quassel();
+
+    /**
+     * Provides access to the Logger instance.
+     *
+     * @returns The Logger instance
+     */
+    Logger *logger() const;
 
     static void setupBuildInfo();
     static const BuildInfo &buildInfo();
@@ -177,48 +193,51 @@ public:
     static QString optionValue(const QString &option);
     static bool isOptionSet(const QString &option);
 
-    enum LogLevel {
-        DebugLevel,
-        InfoLevel,
-        WarningLevel,
-        ErrorLevel
-    };
-
-    static LogLevel logLevel();
-    static void setLogLevel(LogLevel logLevel);
-    static QFile *logFile();
-    static bool logToSyslog();
-
-    static void logFatalMessage(const char *msg);
-
     using ReloadHandler = std::function<bool()>;
 
     static void registerReloadHandler(ReloadHandler handler);
 
     using QuitHandler = std::function<void()>;
 
+    /**
+     * Registers a handler that is called when the application is supposed to quit.
+     *
+     * @note If multiple handlers are registered, they are processed in order of registration.
+     * @note If any handler is registered, quit() will not call QCoreApplication::quit(). It relies
+     *       on one of the handlers doing so, instead.
+     * @param quitHandler Handler to register
+     */
     static void registerQuitHandler(QuitHandler quitHandler);
+
+    const QString &coreDumpFileName();
+
+public slots:
+    /**
+     * Requests to quit the application.
+     *
+     * Calls any registered quit handlers. If no handlers are registered, calls QCoreApplication::quit().
+     */
+    void quit();
+
+signals:
+    void messageLogged(const QDateTime &timeStamp, const QString &msg);
 
 protected:
     static bool init();
-    static void destroy();
 
     static void setRunMode(Quassel::RunMode runMode);
 
     static void setDataDirPaths(const QStringList &paths);
     static QStringList findDataDirPaths();
-    static void disableCrashHandler();
 
     friend class CoreApplication;
     friend class QtUiApplication;
     friend class MonolithicApplication;
 
 private:
-    Quassel();
     void setupEnvironment();
     void registerMetaTypes();
-
-    const QString &coreDumpFileName();
+    void setupSignalHandling();
 
     /**
      * Requests a reload of relevant runtime configuration.
@@ -230,33 +249,26 @@ private:
      */
     bool reloadConfig();
 
-    /**
-     * Requests to quit the application.
-     *
-     * Calls any registered quit handlers. If no handlers are registered, calls QCoreApplication::quit().
-     */
-    void quit();
-
     void logBacktrace(const QString &filename);
 
-    static void handleSignal(int signal);
+private slots:
+    void handleSignal(AbstractSignalWatcher::Action action);
 
 private:
     BuildInfo _buildInfo;
     RunMode _runMode;
     bool _initialized{false};
-    bool _handleCrashes{true};
+    bool _quitting{false};
 
     QString _coreDumpFileName;
     QString _configDirPath;
     QStringList _dataDirPaths;
     QString _translationDirPath;
 
-    LogLevel _logLevel{InfoLevel};
-    bool _logToSyslog{false};
-    std::unique_ptr<QFile> _logFile;
-
     std::shared_ptr<AbstractCliParser> _cliParser;
+
+    Logger *_logger;
+    AbstractSignalWatcher *_signalWatcher{nullptr};
 
     std::vector<ReloadHandler> _reloadHandlers;
     std::vector<QuitHandler> _quitHandlers;

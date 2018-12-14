@@ -28,7 +28,7 @@
 #include "ctcpevent.h"
 #include "ircevent.h"
 #include "ircuser.h"
-#include "logger.h"
+#include "logmessage.h"
 #include "messageevent.h"
 #include "netsplit.h"
 #include "quassel.h"
@@ -402,11 +402,16 @@ void CoreSessionEventProcessor::processIrcEventJoin(IrcEvent *e)
             break;
     }
 
-    // If using away-notify, check new users.  Works around buggy IRC servers
-    // forgetting to send :away messages for users who join channels when away.
-    if (net->capEnabled(IrcCap::AWAY_NOTIFY)) {
-        net->queueAutoWhoOneshot(ircuser->nick());
-    }
+    // With "away-notify" enabled, some IRC servers forget to send :away messages for users who join
+    // channels while away.  Unfortunately, working around this involves WHO'ng every single user as
+    // they join, which is not very efficient.  If at all possible, it's better to get the issue
+    // fixed in the IRC server instead.
+    //
+    // If pursuing a workaround instead, this is where you'd do it.  Check the version control
+    // history for the commit that added this comment to see how to implement it - there's some
+    // unexpected situations to watch out for!
+    //
+    // See https://ircv3.net/specs/extensions/away-notify-3.1.html
 
     if (!handledByNetsplit)
         ircuser->joinChannel(channel);
@@ -636,14 +641,71 @@ void CoreSessionEventProcessor::processIrcEventPing(IrcEvent *e)
 
 void CoreSessionEventProcessor::processIrcEventPong(IrcEvent *e)
 {
-    // the server is supposed to send back what we passed as param. and we send a timestamp
-    // but using quote and whatnought one can send arbitrary pings, so we have to do some sanity checks
-    if (checkParamCount(e, 2)) {
-        QString timestamp = e->params().at(1);
-        QTime sendTime = QTime::fromString(timestamp, "hh:mm:ss.zzz");
-        if (sendTime.isValid())
-            e->network()->setLatency(sendTime.msecsTo(QTime::currentTime()) / 2);
+    // Ensure we get at least one parameter
+    if (!checkParamCount(e, 1))
+        return;
+
+    // Some IRC servers respond with only one parameter, others respond with two, with the latter
+    // being the text sent.  Handle both situations.
+    QString timestamp;
+    if (e->params().count() < 2) {
+        // Only one parameter received
+        // :localhost PONG 02:43:49.565
+        timestamp = e->params().at(0);
+    } else {
+        // Two parameters received, pick the second
+        // :localhost PONG localhost :02:43:49.565
+        timestamp = e->params().at(1);
     }
+
+    // The server is supposed to send back what we passed as parameter, and we send a timestamp.
+    // However, using quote and whatnot, one can send arbitrary pings, and IRC servers may decide to
+    // ignore our requests entirely and send whatever they want, so we have to do some sanity
+    // checks.
+    //
+    // Attempt to parse the timestamp
+    QTime sendTime = QTime::fromString(timestamp, "hh:mm:ss.zzz");
+    if (sendTime.isValid()) {
+        // Mark IRC server as sending valid ping replies
+        if (!coreNetwork(e)->isPongTimestampValid()) {
+            coreNetwork(e)->setPongTimestampValid(true);
+            // Add a message the first time it happens
+            qDebug().nospace() << "Received PONG with valid timestamp, marking pong replies on "
+                                  "network "
+                               << "\"" << qPrintable(e->network()->networkName()) << "\" (ID: "
+                               << qPrintable(QString::number(e->network()->networkId().toInt()))
+                               << ") as usable for latency measurement";
+        }
+        // Remove pending flag
+        coreNetwork(e)->resetPongReplyPending();
+
+        // Don't show this in the UI
+        e->setFlag(EventManager::Silent);
+        // TODO:  To allow for a user-sent /ping (without arguments, so default timestamp is used),
+        // this could track how many automated PINGs have been sent by the core and subtract one
+        // each time, only marking the PING as silent if there's pending automated pong replies.
+        // However, that's a behavior change which warrants further testing.  For now, take the
+        // simpler, previous approach that errs on the side of silencing too much.
+
+        // Calculate latency from time difference, divided by 2 to account for round-trip time
+        e->network()->setLatency(sendTime.msecsTo(QTime::currentTime()) / 2);
+    } else if (coreNetwork(e)->isPongReplyPending() && !coreNetwork(e)->isPongTimestampValid()) {
+        // There's an auto-PING reply pending and we've not yet received a PONG reply with a valid
+        // timestamp.  It's possible this server will never respond with a valid timestamp, and thus
+        // any automated PINGs will result in unwanted spamming of the server buffer.
+
+        // Don't show this in the UI
+        e->setFlag(EventManager::Silent);
+        // Remove pending flag
+        coreNetwork(e)->resetPongReplyPending();
+
+        // Log a message
+        qDebug().nospace() << "Received PONG with invalid timestamp from network "
+                           << "\"" << qPrintable(e->network()->networkName()) << "\" (ID: "
+                           << qPrintable(QString::number(e->network()->networkId().toInt()))
+                           << "), silencing, parameters are " << e->params();
+    }
+    // else: We're not expecting a PONG reply and timestamp is not valid, assume it's from the user
 }
 
 
@@ -846,7 +908,9 @@ void CoreSessionEventProcessor::processIrcEvent301(IrcEvent *e)
     if (ircuser) {
         ircuser->setAway(true);
         ircuser->setAwayMessage(e->params().at(1));
-        //ircuser->setLastAwayMessage(now);
+        // lastAwayMessageTime is set in EventStringifier::processIrcEvent301(), no need to set it
+        // here too
+        //ircuser->setLastAwayMessageTime(now);
     }
 }
 
@@ -959,8 +1023,18 @@ void CoreSessionEventProcessor::processIrcEvent317(IrcEvent *e)
 
     int idleSecs = e->params()[1].toInt();
     if (e->params().count() > 3) { // if we have more then 3 params we have the above mentioned "real life" situation
-        int logintime = e->params()[2].toInt();
-        loginTime = QDateTime::fromTime_t(logintime);
+        // Allow for 64-bit time
+        qint64 logintime = e->params()[2].toLongLong();
+        // Time in IRC protocol is defined as seconds.  Convert from seconds instead.
+        // See https://doc.qt.io/qt-5/qdatetime.html#fromSecsSinceEpoch
+#if QT_VERSION >= 0x050800
+        loginTime = QDateTime::fromSecsSinceEpoch(logintime);
+#else
+        // fromSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for
+        // now.
+        // See https://doc.qt.io/qt-5/qdatetime.html#fromMSecsSinceEpoch
+        loginTime = QDateTime::fromMSecsSinceEpoch((qint64)(logintime * 1000));
+#endif
     }
 
     IrcUser *ircuser = e->network()->ircUser(e->params()[0]);
@@ -985,13 +1059,13 @@ void CoreSessionEventProcessor::processIrcEvent322(IrcEvent *e)
     switch (e->params().count()) {
     case 3:
         topic = e->params()[2];
-        [[clang::fallthrough]];
+        // fallthrough
     case 2:
         userCount = e->params()[1].toUInt();
-        [[clang::fallthrough]];
+        // fallthrough
     case 1:
         channelName = e->params()[0];
-        [[clang::fallthrough]];
+        // fallthrough
     default:
         break;
     }
@@ -1065,9 +1139,7 @@ void CoreSessionEventProcessor::processIrcEvent352(IrcEvent *e)
         return;
 
     QString channel = e->params()[0];
-    // Store the nick separate from ircuser for AutoWho check below
-    QString nick = e->params()[4];
-    IrcUser *ircuser = e->network()->ircUser(nick);
+    IrcUser *ircuser = e->network()->ircUser(e->params()[4]);
     if (ircuser) {
         // Only process the WHO information if an IRC user exists.  Don't create an IRC user here;
         // there's no way to track when the user quits, which would leave a phantom IrcUser lying
@@ -1079,10 +1151,7 @@ void CoreSessionEventProcessor::processIrcEvent352(IrcEvent *e)
     }
 
     // Check if channel name has a who in progress.
-    // If not, then check if user nickname has a who in progress.  Use nick directly; don't use
-    // ircuser as that may be deleted (e.g. nick joins channel, leaves before WHO reply received).
-    if (coreNetwork(e)->isAutoWhoInProgress(channel) ||
-        (coreNetwork(e)->isAutoWhoInProgress(nick))) {
+    if (coreNetwork(e)->isAutoWhoInProgress(channel)) {
         e->setFlag(EventManager::Silent);
     }
 }
@@ -1169,8 +1238,7 @@ void CoreSessionEventProcessor::processIrcEvent354(IrcEvent *e)
         return;
 
     QString channel = e->params()[1];
-    QString nick = e->params()[5];
-    IrcUser *ircuser = e->network()->ircUser(nick);
+    IrcUser *ircuser = e->network()->ircUser(e->params()[5]);
     if (ircuser) {
         // Only process the WHO information if an IRC user exists.  Don't create an IRC user here;
         // there's no way to track when the user quits, which would leave a phantom IrcUser lying
@@ -1194,10 +1262,7 @@ void CoreSessionEventProcessor::processIrcEvent354(IrcEvent *e)
     }
 
     // Check if channel name has a who in progress.
-    // If not, then check if user nickname has a who in progress.  Use nick directly; don't use
-    // ircuser as that may be deleted (e.g. nick joins channel, leaves before WHO reply received).
-    if (coreNetwork(e)->isAutoWhoInProgress(channel) ||
-        (coreNetwork(e)->isAutoWhoInProgress(nick))) {
+    if (coreNetwork(e)->isAutoWhoInProgress(channel)) {
         e->setFlag(EventManager::Silent);
     }
 }
@@ -1544,12 +1609,22 @@ void CoreSessionEventProcessor::handleCtcpPing(CtcpEvent *e)
 
 void CoreSessionEventProcessor::handleCtcpTime(CtcpEvent *e)
 {
-    e->setReply(QDateTime::currentDateTime().toString());
+    // Use the ISO standard to avoid locale-specific translated names
+    // Include timezone offset data to show which timezone a user's in, otherwise we're providing
+    // NTP-over-IRC with terrible accuracy.
+    e->setReply(formatDateTimeToOffsetISO(QDateTime::currentDateTime()));
 }
 
 
 void CoreSessionEventProcessor::handleCtcpVersion(CtcpEvent *e)
 {
-    e->setReply(QString("Quassel IRC %1 (built on %2) -- https://www.quassel-irc.org")
-        .arg(Quassel::buildInfo().plainVersionString).arg(Quassel::buildInfo().commitDate));
+    // Deliberately do not translate project name
+    // Use the ISO standard to avoid locale-specific translated names
+    // Use UTC time to provide a consistent string regardless of timezone
+    // (Statistics tracking tools usually only group client versions by exact string matching)
+    e->setReply(QString("Quassel IRC %1 (version date %2) -- https://www.quassel-irc.org")
+                .arg(Quassel::buildInfo().plainVersionString)
+                .arg(Quassel::buildInfo().commitDate.isEmpty() ?
+                      "unknown" : tryFormatUnixEpoch(Quassel::buildInfo().commitDate,
+                                                     Qt::DateFormat::ISODate, true)));
 }

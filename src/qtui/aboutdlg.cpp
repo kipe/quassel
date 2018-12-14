@@ -21,10 +21,12 @@
 #include "aboutdlg.h"
 
 #include <QDateTime>
-#include <QIcon>
+#include <QPixmap>
 
 #include "aboutdata.h"
+#include "icon.h"
 #include "quassel.h"
+#include "util.h"
 
 AboutDlg::AboutDlg(QWidget *parent)
     : QDialog(parent)
@@ -33,18 +35,30 @@ AboutDlg::AboutDlg(QWidget *parent)
     AboutData::setQuasselPersons(_aboutData);
 
     ui.setupUi(this);
-    ui.quasselLogo->setPixmap(QIcon(":/icons/quassel-64.png").pixmap(64)); // don't let the icon theme affect our logo here
+    ui.quasselLogo->setPixmap(QPixmap{":/pics/quassel-64.svg"});  // don't let the icon theme affect our logo here
 
-    ui.versionLabel->setText(QString(tr("<b>Version:</b> %1<br><b>Version date:</b> %2<br><b>Protocol version:</b> %3"))
-        .arg(Quassel::buildInfo().fancyVersionString)
-        .arg(Quassel::buildInfo().commitDate)
-        .arg(Quassel::buildInfo().protocolVersion));
+    QString versionDate;
+    if (Quassel::buildInfo().commitDate.isEmpty()) {
+        // This shouldn't happen, but sometimes the packaging environment cannot set a proper
+        // date/time.  Add a fallback just in case.
+        versionDate = QString("<i>%1</i>").arg(tr("Unknown date"));
+    }
+    else {
+        versionDate = tryFormatUnixEpoch(Quassel::buildInfo().commitDate,
+                                         Qt::DateFormat::DefaultLocaleShortDate);
+    }
+    ui.versionLabel->setText(QString(tr("<b>Version:</b> %1<br>"
+                                        "<b>Version date:</b> %2<br>"
+                                        "<b>Protocol version:</b> %3"))
+                             .arg(Quassel::buildInfo().fancyVersionString)
+                             .arg(versionDate)
+                             .arg(Quassel::buildInfo().protocolVersion));
     ui.aboutTextBrowser->setHtml(about());
     ui.authorTextBrowser->setHtml(authors());
     ui.contributorTextBrowser->setHtml(contributors());
     ui.thanksToTextBrowser->setHtml(thanksTo());
 
-    setWindowIcon(QIcon::fromTheme("quassel", QIcon(":/icons/quassel.png")));
+    setWindowIcon(icon::get("quassel"));
 }
 
 
@@ -101,9 +115,9 @@ QString AboutDlg::thanksTo() const
                                  "<td><b>John \"nox\" Hand</b></td></tr>"
               "<tr><td><i>" + tr("for the original Quassel logo - The All-Seeing Eye") + "</i></td></tr>"
               "<tr/>"
-              "<tr><td rowspan='2' valign='middle'><img src=':/icons/quassel-32.png'></td>"
+              "<tr><td rowspan='2' valign='middle'><img src=':/pics/quassel-oxygen-32.png'></td>"
                                  "<td><b>Nuno Pinheiro</b></td></tr>"
-              "<tr><td><i>" + tr("for the current Quassel logo") + "</i></td></tr>"
+              "<tr><td><i>" + tr("for the Oxygen Quassel logo") + "</i></td></tr>"
               "<tr/>"
               "<tr><td rowspan='2' valign='middle'><img src=':/pics/kde-vdg.png'></td>"
                                  "<td><b><a href='https://vdesign.kde.org'>The KDE Visual Design Group</a></b></td></tr>"

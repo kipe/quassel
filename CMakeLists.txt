@@ -6,26 +6,49 @@
 # General setup
 #####################################################################
 
-project(QuasselIRC)
-
 # Versions
 set(QUASSEL_MAJOR  0)
 set(QUASSEL_MINOR 13)
 set(QUASSEL_PATCH  0)
-set(QUASSEL_VERSION_STRING "0.13-pre")
+set(QUASSEL_VERSION_STRING "0.13.0")
 
-# Output CMake version and build type for debug reasons
+# Build type
+if (CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES Release RelWithDebInfo Debug Debugfull Profile)
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "These are the configuration types we support" FORCE)
+endif()
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build, options are: Release RelWithDebInfo Debug Debugfull Profile None" FORCE)
+endif()
+
+# Output CMake and Quassel versions as well as build type for debug reasons
+message(STATUS "Building Quassel ${QUASSEL_VERSION_STRING}...")
 message(STATUS "Using CMake ${CMAKE_VERSION}")
 message(STATUS "CMake build type: ${CMAKE_BUILD_TYPE}")
 
-# Tell CMake about or own modules
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+# Support ccache if found
+# This should happen before calling project(), so compiler settings are validated.
+option(USE_CCACHE "Enable support for ccache if available" ON)
+if (USE_CCACHE)
+    message(STATUS "Checking for ccache")
+    find_program(CCACHE_PROGRAM ccache)
+    if (CCACHE_PROGRAM)
+        set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+        message(STATUS "Checking for ccache - enabled")
+    else()
+        message(STATUS "Checking for ccache - not found")
+    endif()
+endif()
+
+# Set up project
+project(Quassel C CXX)
 
 # General conveniences
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-# Include various CMake modules...
+# Include various CMake modules
 include(CMakePushCheckState)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
@@ -33,7 +56,8 @@ include(CheckCXXSourceCompiles)
 include(CMakeDependentOption)
 include(FeatureSummary)
 
-# ... and our own stuff
+# Tell CMake about or own modules
+set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include(QuasselCompileSettings)
 include(QuasselMacros)
 
@@ -41,7 +65,7 @@ include(QuasselMacros)
 # Options and variables that can be set on the command line
 #####################################################################
 
-# First, choose a Qt version. We support USE_QT5 and USE_QT4; if neither is set, Qt5 will be used
+# Choose a Qt version. We support USE_QT5 and USE_QT4; if neither is set, Qt5 will be used
 option(USE_QT5 "Enable support for Qt5" OFF)
 if (USE_QT5) # takes precedence
     set(USE_QT4 OFF)
@@ -71,23 +95,19 @@ else()
     add_feature_info(WITH_KDE WITH_KDE "Integrate with the KDE Frameworks runtime environment")
 endif()
 
-cmake_dependent_option(WITH_BREEZE "Install Breeze icon theme (usually shipped with KDE)" ON "NOT WITH_KDE" OFF)
-cmake_dependent_option(WITH_BREEZE_DARK "Install Dark Breeze icon theme (usually shipped with KDE)" OFF "NOT WITH_KDE" OFF)
-cmake_dependent_option(WITH_OXYGEN "Install Oxygen icon theme (usually shipped with KDE)" OFF "NOT WITH_KDE" OFF)
-if (NOT WITH_KDE)
-    add_feature_info(WITH_BREEZE WITH_BREEZE "Install Breeze icon theme")
-    add_feature_info(WITH_BREEZE_DARK WITH_BREEZE_DARK "Install Dark Breeze icon theme")
-    add_feature_info(WITH_OXYGEN WITH_OXYGEN "Install Oxygen icon theme")
-endif()
+# Icon theme support. By default, install the Breeze icon theme (may be disabled if a system installation is present)
+option(WITH_BUNDLED_ICONS "Install required icons from the Breeze icon theme" ON)
+add_feature_info(WITH_BUNDLED_ICONS WITH_BUNDLED_ICONS "Install required icons from the Breeze icon theme")
 
-if (WITH_OXYGEN)
-    add_definitions(-DWITH_OXYGEN)
+# For Qt4, always support Oxygen
+cmake_dependent_option(WITH_OXYGEN_ICONS "Support the Oxygen icon theme (KDE4)" OFF "USE_QT5" ON)
+add_feature_info(WITH_OXYGEN_ICONS WITH_OXYGEN_ICONS "Support the Oxygen icon theme (KDE4)" OFF)
+
+if (WITH_BUNDLED_ICONS)
+    add_definitions(-DWITH_BUNDLED_ICONS)
 endif()
-if (WITH_BREEZE)
-    add_definitions(-DWITH_BREEZE)
-endif()
-if (WITH_BREEZE_DARK)
-    add_definitions(-DWITH_BREEZE_DARK)
+if (WITH_OXYGEN_ICONS)
+    add_definitions(-DWITH_OXYGEN_ICONS)
 endif()
 
 # For this, the feature info is added after we know if QtWebkit is installed
@@ -330,7 +350,7 @@ if (USE_QT5)
         if (ECM_FOUND)
             list(APPEND CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
             if (WITH_KDE)
-                find_package(KF5 COMPONENTS ConfigWidgets CoreAddons Notifications NotifyConfig TextWidgets WidgetsAddons XmlGui QUIET)
+                find_package(KF5 COMPONENTS ConfigWidgets CoreAddons Notifications NotifyConfig Sonnet TextWidgets WidgetsAddons XmlGui QUIET REQUIRED)
                 set_package_properties(KF5 PROPERTIES TYPE REQUIRED
                     URL "http://www.kde.org"
                     DESCRIPTION "KDE Frameworks"
@@ -551,7 +571,7 @@ if (KDE4_FOUND)
     set(EMBED_DATA OFF)
 
     # Better have the compile flags global, even for the core, to avoid problems with linking the mono client
-    add_definitions(-DHAVE_KDE -DHAVE_KDE4 ${KDE4_DEFINITIONS})
+    add_definitions(-DHAVE_KDE -DHAVE_KDE4 ${KDE4_DEFINITIONS} ${KDE4_ENABLE_EXCEPTIONS})
     set(WITH_KDE4 TRUE)
 endif()
 
@@ -563,6 +583,7 @@ if (USE_QT5 AND WITH_KDE)
     include(KDECompilerSettings)
     include(KDECMakeSettings)
 
+    kde_enable_exceptions()
     add_definitions(-DHAVE_KDE -DHAVE_KF5)
     set(WITH_KF5 TRUE)
 endif()

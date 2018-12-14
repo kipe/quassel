@@ -20,7 +20,7 @@
 
 #include "sqlauthenticator.h"
 
-#include "logger.h"
+#include "logmessage.h"
 #include "network.h"
 #include "quassel.h"
 
@@ -72,16 +72,23 @@ UserId SqlAuthenticator::validateUser(const QString &user, const QString &passwo
 }
 
 
-bool SqlAuthenticator::setup(const QVariantMap &settings)
+bool SqlAuthenticator::setup(const QVariantMap &settings, const QProcessEnvironment &environment,
+                             bool loadFromEnvironment)
 {
     Q_UNUSED(settings)
+    Q_UNUSED(environment)
+    Q_UNUSED(loadFromEnvironment)
     return true;
 }
 
 
-Authenticator::State SqlAuthenticator::init(const QVariantMap &settings)
+Authenticator::State SqlAuthenticator::init(const QVariantMap &settings,
+                                            const QProcessEnvironment &environment,
+                                            bool loadFromEnvironment)
 {
     Q_UNUSED(settings)
+    Q_UNUSED(environment)
+    Q_UNUSED(loadFromEnvironment)
 
     // TODO: FIXME: this should check if the storage provider is ready, but I don't
     // know if there's an exposed way to do that at the moment.

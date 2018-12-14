@@ -75,6 +75,7 @@ public:
         JoinChannel = 0x1000,
         ShowChannelList = 0x2000,
         ShowIgnoreList = 0x3000,
+        ShowNetworkConfig = 0x4000,
 
         // Nick actions
         NickMask = 0xff0000,
@@ -153,7 +154,17 @@ protected slots:
     virtual void actionTriggered(QAction *);
 
 signals:
-    void showChannelList(NetworkId);
+    /**
+     * Request to show the channel list dialog for the network, optionally searching by channel name
+     *
+     * @see MainWin::showChannelList()
+     *
+     * @param networkId        Network ID for associated network
+     * @param channelFilters   Partial channel name to search for, or empty to show all
+     * @param listImmediately  If true, immediately list channels, otherwise just show dialog
+     */
+    void showChannelList(NetworkId, const QString &, bool);
+    void showNetworkConfig(NetworkId);
     void showIgnoreList(QString);
 
 protected:

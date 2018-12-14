@@ -40,8 +40,23 @@ public:
 
     void setNetwork(NetworkId netId);
 
-protected slots:
+    /**
+     * Set the channel search string, enabling advanced mode if needed
+     *
+     * Sets the channel name search text to the specified string, enabling advanced mode.  If search
+     * string is empty, advanced mode will be automatically hidden.
+     *
+     * @param channelFilters Partial channel name to search for, or empty to not filter by name
+     */
+    void setChannelFilters(const QString &channelFilters);
+
+public slots:
+    /**
+     * Request a channel listing using any parameters set in the UI
+     */
     void requestSearch();
+
+protected slots:
     void receiveChannelList(const NetworkId &netId, const QStringList &channelFilters, const QList<IrcListHelper::ChannelDescription> &channelList);
     void reportFinishedList();
     void joinChannel(const QModelIndex &);
@@ -55,6 +70,11 @@ private:
     void showErrors(bool show);
     void enableQuery(bool enable);
     void setAdvancedMode(bool advanced);
+
+    /**
+     * Update the focus of input widgets according to dialog state
+     */
+    void updateInputFocus();
 
     Ui::ChannelListDlg ui;
 

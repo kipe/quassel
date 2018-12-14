@@ -1,6 +1,7 @@
 # Builds the common module
 
 set(SOURCES
+    abstractsignalwatcher.h
     aliasmanager.cpp
     authhandler.cpp
     backlogmanager.cpp
@@ -10,10 +11,13 @@ set(SOURCES
     bufferviewconfig.cpp
     bufferviewmanager.cpp
     compressor.cpp
+    coreinfo.cpp
     ctcpevent.cpp
     dccconfig.cpp
     event.cpp
     eventmanager.cpp
+    expressionmatch.cpp
+    # expressionmatchtests.cpp
     highlightrulemanager.cpp
     identity.cpp
     ignorelistmanager.cpp
@@ -23,11 +27,13 @@ set(SOURCES
     irclisthelper.cpp
     ircuser.cpp
     logger.cpp
+    logmessage.cpp
     message.cpp
     messageevent.cpp
     network.cpp
     networkconfig.cpp
     networkevent.cpp
+    nickhighlightmatcher.cpp
     peer.cpp
     peerfactory.cpp
     presetnetworks.cpp
@@ -35,9 +41,11 @@ set(SOURCES
     remotepeer.cpp
     settings.cpp
     signalproxy.cpp
+    singleton.h
     syncableobject.cpp
     transfer.cpp
     transfermanager.cpp
+    types.cpp
     util.cpp
 
     serializers/serializers.cpp
@@ -46,7 +54,6 @@ set(SOURCES
     protocols/legacy/legacypeer.cpp
 
     # needed for automoc
-    coreinfo.h
     irccap.h
     protocol.h
 )
@@ -81,13 +88,13 @@ if (APPLE)
 endif()
 
 if (WIN32)
-    set(SOURCES ${SOURCES} logbacktrace_win.cpp)
+    set(SOURCES ${SOURCES} logbacktrace_win.cpp windowssignalwatcher.cpp)
 else()
     if (EXECINFO_FOUND)
         add_definitions(-DHAVE_EXECINFO)
         include_directories(${EXECINFO_INCLUDES})
     endif()
-    set(SOURCES ${SOURCES} logbacktrace_unix.cpp)
+    set(SOURCES ${SOURCES} logbacktrace_unix.cpp posixsignalwatcher.cpp)
 endif()
 
 qt_add_resources(SOURCES ${COMMON_RCS})

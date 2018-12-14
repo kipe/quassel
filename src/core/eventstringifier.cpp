@@ -365,10 +365,11 @@ void EventStringifier::processIrcEventPart(IrcEvent *e)
 
 void EventStringifier::processIrcEventPong(IrcEvent *e)
 {
-    QString timestamp = e->params().at(1);
-    QTime sendTime = QTime::fromString(timestamp, "hh:mm:ss.zzz");
-    if (!sendTime.isValid())
-        displayMsg(e, Message::Server, "PONG " + e->params().join(" "), e->prefix());
+    // CoreSessionEventProcessor will flag automated PONG replies as EventManager::Silent.  There's
+    // no need to handle that specially here.
+
+    // Format the PONG reply for display
+    displayMsg(e, Message::Server, "PONG " + e->params().join(" "), e->prefix());
 }
 
 
@@ -449,11 +450,21 @@ void EventStringifier::processIrcEvent301(IrcEvent *e)
         target = nick;
         IrcUser *ircuser = e->network()->ircUser(nick);
         if (ircuser) {
-            int now = QDateTime::currentDateTime().toTime_t();
-            const int silenceTime = 60;
-            if (ircuser->lastAwayMessage() + silenceTime >= now)
+            QDateTime now = QDateTime::currentDateTime();
+            now.setTimeSpec(Qt::UTC);
+            // Don't print "user is away" messages more often than this
+            // 1 hour = 60 min * 60 sec
+            const int silenceTime = 60 * 60;
+            // Check if away state has NOT changed and silence time hasn't yet elapsed
+            if (!ircuser->hasAwayChanged()
+                    && ircuser->lastAwayMessageTime().addSecs(silenceTime) >= now) {
+                // Away message hasn't changed and we're still within the period of silence; don't
+                // repeat the message
                 send = false;
-            ircuser->setLastAwayMessage(now);
+            }
+            ircuser->setLastAwayMessageTime(now);
+            // Mark any changes in away as acknowledged
+            ircuser->acknowledgeAwayChanged();
         }
     }
     if (send)
@@ -542,7 +553,16 @@ void EventStringifier::processIrcEvent317(IrcEvent *e)
     int idleSecs = e->params()[1].toInt();
 
     if (e->params().count() > 3) { // if we have more then 3 params we have the above mentioned "real life" situation
-        QDateTime loginTime = QDateTime::fromTime_t(e->params()[2].toInt()).toUTC();
+        // Time in IRC protocol is defined as seconds.  Convert from seconds instead.
+        // See https://doc.qt.io/qt-5/qdatetime.html#fromSecsSinceEpoch
+#if QT_VERSION >= 0x050800
+        QDateTime loginTime = QDateTime::fromSecsSinceEpoch(e->params()[2].toLongLong()).toUTC();
+#else
+        // fromSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for now.
+        // See https://doc.qt.io/qt-5/qdatetime.html#fromMSecsSinceEpoch
+        QDateTime loginTime = QDateTime::fromMSecsSinceEpoch(
+                    (qint64)(e->params()[2].toLongLong() * 1000)).toUTC();
+#endif
         displayMsg(e, Message::Server, tr("[Whois] %1 is logged in since %2")
 	    .arg(e->params()[0], loginTime.toString("yyyy-MM-dd hh:mm:ss UTC")));
     }
@@ -598,13 +618,13 @@ void EventStringifier::processIrcEvent322(IrcEvent *e)
     switch (e->params().count()) {
     case 3:
         topic = e->params()[2];
-        [[clang::fallthrough]];
+        // fallthrough
     case 2:
         userCount = e->params()[1].toUInt();
-        [[clang::fallthrough]];
+        /* fallthrough */
     case 1:
         channelName = e->params()[0];
-        [[clang::fallthrough]];
+        // blubb
     default:
         break;
     }
@@ -645,12 +665,21 @@ void EventStringifier::processIrcEvent329(IrcEvent *e)
         return;
 
     QString channel = e->params()[0];
-    uint unixtime = e->params()[1].toUInt();
+    // Allow for 64-bit time
+    qint64 unixtime = e->params()[1].toLongLong();
     if (!unixtime) {
         qWarning() << Q_FUNC_INFO << "received invalid timestamp:" << e->params()[1];
         return;
     }
-    QDateTime time = QDateTime::fromTime_t(unixtime).toUTC();
+    // Time in IRC protocol is defined as seconds.  Convert from seconds instead.
+    // See https://doc.qt.io/qt-5/qdatetime.html#fromSecsSinceEpoch
+#if QT_VERSION >= 0x050800
+    QDateTime time = QDateTime::fromSecsSinceEpoch(unixtime).toUTC();
+#else
+    // fromSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for now.
+    // See https://doc.qt.io/qt-5/qdatetime.html#fromMSecsSinceEpoch
+    QDateTime time = QDateTime::fromMSecsSinceEpoch((qint64)(unixtime * 1000)).toUTC();
+#endif
     displayMsg(e, Message::Topic, tr("Channel %1 created on %2")
         .arg(channel, time.toString("yyyy-MM-dd hh:mm:ss UTC")),
 	QString(), channel);
@@ -696,7 +725,16 @@ void EventStringifier::processIrcEvent333(IrcEvent *e)
         return;
 
     QString channel = e->params().first();
-    QDateTime topicSetTime = QDateTime::fromTime_t(e->params()[2].toInt()).toUTC();
+    // Time in IRC protocol is defined as seconds.  Convert from seconds instead.
+    // See https://doc.qt.io/qt-5/qdatetime.html#fromSecsSinceEpoch
+#if QT_VERSION >= 0x050800
+    QDateTime topicSetTime = QDateTime::fromSecsSinceEpoch(e->params()[2].toLongLong()).toUTC();
+#else
+    // fromSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for now.
+    // See https://doc.qt.io/qt-5/qdatetime.html#fromMSecsSinceEpoch
+    QDateTime topicSetTime = QDateTime::fromMSecsSinceEpoch(
+                (qint64)(e->params()[2].toLongLong() * 1000)).toUTC();
+#endif
     displayMsg(e, Message::Topic, tr("Topic set by %1 on %2")
         .arg(e->params()[1],
 	     topicSetTime.toString("yyyy-MM-dd hh:mm:ss UTC")), QString(), channel);

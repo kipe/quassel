@@ -20,9 +20,8 @@
 
 #include "chatmonitorsettingspage.h"
 
-#include <QIcon>
-
 #include "client.h"
+#include "icon.h"
 #include "networkmodel.h"
 #include "bufferviewconfig.h"
 #include "buffermodel.h"
@@ -37,8 +36,8 @@ ChatMonitorSettingsPage::ChatMonitorSettingsPage(QWidget *parent)
 {
     ui.setupUi(this);
 
-    ui.activateBuffer->setIcon(QIcon::fromTheme("go-next"));
-    ui.deactivateBuffer->setIcon(QIcon::fromTheme("go-previous"));
+    ui.activateBuffer->setIcon(icon::get("go-next"));
+    ui.deactivateBuffer->setIcon(icon::get("go-previous"));
 
     // setup available buffers config (for the bufferview on the left)
     _configAvailable = new BufferViewConfig(-667, this);
@@ -64,6 +63,7 @@ ChatMonitorSettingsPage::ChatMonitorSettingsPage(QWidget *parent)
     connect(ui.operationMode, SIGNAL(currentIndexChanged(int)), SLOT(switchOperationMode(int)));
     connect(ui.showHighlights, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
     connect(ui.showOwnMessages, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
+    connect(ui.alwaysOwn, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
     connect(ui.showBacklog, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
     connect(ui.includeRead, SIGNAL(toggled(bool)), SLOT(widgetHasChanged()));
 }
@@ -77,9 +77,13 @@ bool ChatMonitorSettingsPage::hasDefaults() const
 
 void ChatMonitorSettingsPage::defaults()
 {
+    // NOTE: Whenever changing defaults here, also update ChatMonitorFilter::ChatMonitorFilter()
+    // and ChatMonitorSettingsPage::loadSettings() to match
+
     settings["OperationMode"] = ChatViewSettings::OptOut;
     settings["ShowHighlights"] = false;
-    settings["ShowOwnMsgs"] = false;
+    settings["ShowOwnMsgs"] = true;
+    settings["AlwaysOwn"] = false;
     settings["Buffers"] = QVariant();
     settings["Default"] = true;
     settings["ShowBacklog"] = true;
@@ -100,6 +104,7 @@ void ChatMonitorSettingsPage::load()
     ui.operationMode->setCurrentIndex(settings["OperationMode"].toInt() - 1);
     ui.showHighlights->setChecked(settings["ShowHighlights"].toBool());
     ui.showOwnMessages->setChecked(settings["ShowOwnMsgs"].toBool());
+    ui.alwaysOwn->setChecked(settings["AlwaysOwn"].toBool());
     ui.showBacklog->setChecked(settings["ShowBacklog"].toBool());
     ui.includeRead->setChecked(settings["IncludeRead"].toBool());
 
@@ -128,14 +133,18 @@ void ChatMonitorSettingsPage::load()
 
 void ChatMonitorSettingsPage::loadSettings()
 {
+    // NOTE: Whenever changing defaults here, also update ChatMonitorFilter::ChatMonitorFilter()
+    // and ChatMonitorSettingsPage::defaults() to match
     ChatViewSettings chatViewSettings("ChatMonitor");
-    settings["OperationMode"] = (ChatViewSettings::OperationMode)chatViewSettings.value("OperationMode", ChatViewSettings::OptOut).toInt();
 
+    settings["OperationMode"] = (ChatViewSettings::OperationMode)
+            chatViewSettings.value("OperationMode", ChatViewSettings::OptOut).toInt();
     settings["ShowHighlights"] = chatViewSettings.value("ShowHighlights", false);
-    settings["ShowOwnMsgs"] = chatViewSettings.value("ShowOwnMsgs", false);
+    settings["ShowOwnMsgs"] = chatViewSettings.value("ShowOwnMsgs", true);
+    settings["AlwaysOwn"] = chatViewSettings.value("AlwaysOwn", false);
     settings["Buffers"] = chatViewSettings.value("Buffers", QVariantList());
     settings["ShowBacklog"] = chatViewSettings.value("ShowBacklog", true);
-    settings["IncludeRead"] = chatViewSettings.value("IncludeRead", true);
+    settings["IncludeRead"] = chatViewSettings.value("IncludeRead", false);
 }
 
 
@@ -146,6 +155,7 @@ void ChatMonitorSettingsPage::save()
     chatViewSettings.setValue("OperationMode", ui.operationMode->currentIndex() + 1);
     chatViewSettings.setValue("ShowHighlights", ui.showHighlights->isChecked());
     chatViewSettings.setValue("ShowOwnMsgs", ui.showOwnMessages->isChecked());
+    chatViewSettings.setValue("AlwaysOwn", ui.alwaysOwn->isChecked());
     chatViewSettings.setValue("ShowBacklog", ui.showBacklog->isChecked());
     chatViewSettings.setValue("IncludeRead", ui.includeRead->isChecked());
 
@@ -175,6 +185,8 @@ bool ChatMonitorSettingsPage::testHasChanged()
     if (settings["ShowHighlights"].toBool() != ui.showHighlights->isChecked())
         return true;
     if (settings["ShowOwnMsgs"].toBool() != ui.showOwnMessages->isChecked())
+        return true;
+    if (settings["AlwaysOwn"].toBool() != ui.alwaysOwn->isChecked())
         return true;
     if (settings["ShowBacklog"].toBool() != ui.showBacklog->isChecked())
         return true;

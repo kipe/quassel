@@ -18,8 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef SYSTRAYNOTIFICATIONBACKEND_H_
-#define SYSTRAYNOTIFICATIONBACKEND_H_
+#pragma once
 
 #include "abstractnotificationbackend.h"
 #include "settingspage.h"
@@ -45,7 +44,6 @@ private slots:
     void notificationActivated(uint notificationId);
     void notificationActivated(SystemTray::ActivationReason);
 
-    void animateChanged(const QVariant &);
     void showBubbleChanged(const QVariant &);
     void updateToolTip();
 
@@ -53,7 +51,6 @@ private:
     class ConfigWidget;
 
     bool _showBubble;
-    bool _animate;
     QList<Notification> _notifications;
     bool _blockActivation;
 };
@@ -77,6 +74,3 @@ private:
     QCheckBox *_showBubbleBox;
     bool _showBubble;
 };
-
-
-#endif

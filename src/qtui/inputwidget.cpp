@@ -21,17 +21,20 @@
 #include "inputwidget.h"
 
 #include <QIcon>
+#include <QPainter>
+#include <QPixmap>
+#include <QRect>
 
 #include "action.h"
 #include "actioncollection.h"
 #include "bufferview.h"
 #include "client.h"
+#include "icon.h"
 #include "ircuser.h"
 #include "networkmodel.h"
 #include "qtui.h"
 #include "qtuisettings.h"
 #include "tabcompleter.h"
-#include <QPainter>
 
 const int leftMargin = 3;
 
@@ -47,7 +50,7 @@ InputWidget::InputWidget(QWidget *parent)
     layout()->setAlignment(ui.showStyleButton, Qt::AlignBottom);
     layout()->setAlignment(ui.styleFrame, Qt::AlignBottom);
 
-    ui.styleFrame->setVisible(false);
+    setStyleOptionsExpanded(false);
 
     setFocusProxy(ui.inputEdit);
     ui.ownNick->setFocusProxy(ui.inputEdit);
@@ -61,11 +64,10 @@ InputWidget::InputWidget(QWidget *parent)
     ui.inputEdit->setMode(MultiLineEdit::MultiLine);
     ui.inputEdit->setPasteProtectionEnabled(true);
 
-    ui.boldButton->setIcon(QIcon::fromTheme("format-text-bold"));
-    ui.italicButton->setIcon(QIcon::fromTheme("format-text-italic"));
-    ui.underlineButton->setIcon(QIcon::fromTheme("format-text-underline"));
-    ui.textcolorButton->setIcon(QIcon::fromTheme("format-text-color"));
-    ui.highlightcolorButton->setIcon(QIcon::fromTheme("format-fill-color"));
+    ui.boldButton->setIcon(icon::get("format-text-bold"));
+    ui.italicButton->setIcon(icon::get("format-text-italic"));
+    ui.underlineButton->setIcon(icon::get("format-text-underline"));
+    ui.clearButton->setIcon(icon::get("edit-clear"));
     ui.encryptionIconLabel->hide();
 
     _colorMenu = new QMenu();
@@ -87,9 +89,24 @@ InputWidget::InputWidget(QWidget *parent)
     _colorFillMenu->addAction(pix, tr("Clear Color"))->setData("");
 
     ui.textcolorButton->setMenu(_colorMenu);
+    // Set the default action to clear color (last added action)
+    ui.textcolorButton->setDefaultAction(_colorMenu->actions().last());
     connect(_colorMenu, SIGNAL(triggered(QAction *)), this, SLOT(colorChosen(QAction *)));
+
     ui.highlightcolorButton->setMenu(_colorFillMenu);
+    // Set the default action to clear fill color (last added action)
+    ui.highlightcolorButton->setDefaultAction(_colorFillMenu->actions().last());
     connect(_colorFillMenu, SIGNAL(triggered(QAction *)), this, SLOT(colorHighlightChosen(QAction *)));
+
+    // Needs to be done after adding the menu, otherwise the icon mysteriously vanishes until clicked
+    ui.textcolorButton->setIcon(icon::get("format-text-color"));
+    ui.highlightcolorButton->setIcon(icon::get("format-fill-color"));
+
+    // Show/hide style button
+    connect(ui.showStyleButton, SIGNAL(toggled(bool)), this, SLOT(setStyleOptionsExpanded(bool)));
+
+    // Clear formatting button
+    connect(ui.clearButton, SIGNAL(clicked()), this, SLOT(clearFormat()));
 
     new TabCompleter(ui.inputEdit);
 
@@ -100,11 +117,6 @@ InputWidget::InputWidget(QWidget *parent)
         setCustomFont(fs.value("InputWidget", QFont()));
 
     UiSettings s("InputWidget");
-
-#ifdef HAVE_KDE4
-    s.notify("EnableSpellCheck", this, SLOT(setEnableSpellCheck(QVariant)));
-    setEnableSpellCheck(s.value("EnableSpellCheck", false));
-#endif
 
     s.notify("EnableEmacsMode", this, SLOT(setEnableEmacsMode(QVariant)));
     setEnableEmacsMode(s.value("EnableEmacsMode", false));
@@ -169,12 +181,6 @@ void InputWidget::setCustomFont(const QVariant &v)
     font.setUnderline(false);
     font.setStrikeOut(false);
     ui.inputEdit->setCustomFont(font);
-}
-
-
-void InputWidget::setEnableSpellCheck(const QVariant &v)
-{
-    ui.inputEdit->setSpellCheckEnabled(v.toBool());
 }
 
 
@@ -370,6 +376,50 @@ BufferInfo InputWidget::currentBufferInfo() const
     return selectionModel()->currentIndex().data(NetworkModel::BufferInfoRole).value<BufferInfo>();
 };
 
+
+void InputWidget::applyFormatActiveColor()
+{
+    if (!ui.textcolorButton->defaultAction()) {
+        return;
+    }
+    colorChosen(ui.textcolorButton->defaultAction());
+}
+
+
+void InputWidget::applyFormatActiveColorFill()
+{
+    if (!ui.highlightcolorButton->defaultAction()) {
+        return;
+    }
+    colorHighlightChosen(ui.highlightcolorButton->defaultAction());
+}
+
+
+void InputWidget::toggleFormatBold()
+{
+    setFormatBold(!ui.boldButton->isChecked());
+}
+
+
+void InputWidget::toggleFormatItalic()
+{
+    setFormatItalic(!ui.italicButton->isChecked());
+}
+
+
+void InputWidget::toggleFormatUnderline()
+{
+    setFormatUnderline(!ui.underlineButton->isChecked());
+}
+
+
+void InputWidget::clearFormat()
+{
+    // Clear all formatting for selection (not global)
+    setFormatClear(false);
+}
+
+
 void InputWidget::setNetwork(NetworkId networkId)
 {
     if (_networkId == networkId)
@@ -471,7 +521,7 @@ void InputWidget::updateNickSelector() const
     ui.ownNick->addItems(nicks);
 
     if (me && me->isAway())
-        ui.ownNick->setItemData(nickIdx, QIcon::fromTheme("user-away"), Qt::DecorationRole);
+        ui.ownNick->setItemData(nickIdx, icon::get({"im-user-away", "user-away"}), Qt::DecorationRole);
 
     ui.ownNick->setCurrentIndex(nickIdx);
 }
@@ -493,17 +543,65 @@ void InputWidget::changeNick(const QString &newNick) const
 void InputWidget::onTextEntered(const QString &text)
 {
     Client::userInput(currentBufferInfo(), text);
-    ui.boldButton->setChecked(false);
-    ui.underlineButton->setChecked(false);
-    ui.italicButton->setChecked(false);
 
+    // Remove formatting from entered text
+    // TODO: Offer a way to convert pasted text to mIRC formatting codes
+    setFormatClear(true);
+}
+
+
+void InputWidget::setFormatClear(const bool global)
+{
+    // Apply formatting
     QTextCharFormat fmt;
     fmt.setFontWeight(QFont::Normal);
     fmt.setFontUnderline(false);
     fmt.setFontItalic(false);
     fmt.clearForeground();
     fmt.clearBackground();
-    inputLine()->setCurrentCharFormat(fmt);
+    if (global) {
+        inputLine()->setCurrentCharFormat(fmt);
+    } else {
+        setFormatOnSelection(fmt);
+    }
+
+    // Make sure UI state follows
+    ui.boldButton->setChecked(false);
+    ui.italicButton->setChecked(false);
+    ui.underlineButton->setChecked(false);
+}
+
+
+void InputWidget::setFormatBold(const bool bold)
+{
+    // Apply formatting
+    QTextCharFormat fmt;
+    fmt.setFontWeight(bold ? QFont::Bold : QFont::Normal);
+    mergeFormatOnSelection(fmt);
+    // Make sure UI state follows
+    ui.boldButton->setChecked(bold);
+}
+
+
+void InputWidget::setFormatItalic(const bool italic)
+{
+    // Apply formatting
+    QTextCharFormat fmt;
+    fmt.setFontItalic(italic);
+    mergeFormatOnSelection(fmt);
+    // Make sure UI state follows
+    ui.italicButton->setChecked(italic);
+}
+
+
+void InputWidget::setFormatUnderline(const bool underline)
+{
+    // Apply formatting
+    QTextCharFormat fmt;
+    fmt.setFontUnderline(underline);
+    mergeFormatOnSelection(fmt);
+    // Make sure UI state follows
+    ui.underlineButton->setChecked(underline);
 }
 
 
@@ -530,6 +628,19 @@ QTextCharFormat InputWidget::getFormatOfWordOrSelection()
 }
 
 
+void InputWidget::setStyleOptionsExpanded(bool expanded)
+{
+    ui.styleFrame->setVisible(expanded);
+    if (expanded) {
+        ui.showStyleButton->setArrowType(Qt::LeftArrow);
+        ui.showStyleButton->setToolTip(tr("Hide formatting options"));
+    } else {
+        ui.showStyleButton->setArrowType(Qt::RightArrow);
+        ui.showStyleButton->setToolTip(tr("Show formatting options"));
+    }
+}
+
+
 void InputWidget::currentCharFormatChanged(const QTextCharFormat &format)
 {
     fontChanged(format.font());
@@ -538,25 +649,19 @@ void InputWidget::currentCharFormatChanged(const QTextCharFormat &format)
 
 void InputWidget::on_boldButton_clicked(bool checked)
 {
-    QTextCharFormat fmt;
-    fmt.setFontWeight(checked ? QFont::Bold : QFont::Normal);
-    mergeFormatOnSelection(fmt);
+    setFormatBold(checked);
 }
 
 
 void InputWidget::on_underlineButton_clicked(bool checked)
 {
-    QTextCharFormat fmt;
-    fmt.setFontUnderline(checked);
-    mergeFormatOnSelection(fmt);
+    setFormatUnderline(checked);
 }
 
 
 void InputWidget::on_italicButton_clicked(bool checked)
 {
-    QTextCharFormat fmt;
-    fmt.setFontItalic(checked);
-    mergeFormatOnSelection(fmt);
+    setFormatItalic(checked);
 }
 
 
@@ -584,7 +689,7 @@ void InputWidget::colorChosen(QAction *action)
         mergeFormatOnSelection(fmt);
     }
     ui.textcolorButton->setDefaultAction(action);
-    ui.textcolorButton->setIcon(createColorToolButtonIcon(QIcon::fromTheme("format-text-color"), color));
+    ui.textcolorButton->setIcon(createColorToolButtonIcon(icon::get("format-text-color"), color));
 }
 
 
@@ -604,19 +709,13 @@ void InputWidget::colorHighlightChosen(QAction *action)
         mergeFormatOnSelection(fmt);
     }
     ui.highlightcolorButton->setDefaultAction(action);
-    ui.highlightcolorButton->setIcon(createColorToolButtonIcon(QIcon::fromTheme("format-fill-color"), color));
+    ui.highlightcolorButton->setIcon(createColorToolButtonIcon(icon::get("format-fill-color"), color));
 }
 
 
 void InputWidget::on_showStyleButton_toggled(bool checked)
 {
-    ui.styleFrame->setVisible(checked);
-    if (checked) {
-        ui.showStyleButton->setArrowType(Qt::LeftArrow);
-    }
-    else {
-        ui.showStyleButton->setArrowType(Qt::RightArrow);
-    }
+    setStyleOptionsExpanded(checked);
 }
 
 

@@ -20,14 +20,18 @@
 
 #pragma once
 
+#include <memory>
+
 #include <QList>
 #include <QPointer>
 
 #include "bufferinfo.h"
+#include "coreinfo.h"
 #include "coreaccount.h"
 #include "coreconnection.h"
 #include "highlightrulemanager.h"
 #include "quassel.h"
+#include "singleton.h"
 #include "types.h"
 
 class Message;
@@ -62,7 +66,7 @@ class TransferModel;
 
 struct NetworkInfo;
 
-class Client : public QObject
+class Client : public QObject, public Singleton<Client>
 {
     Q_OBJECT
 
@@ -72,10 +76,9 @@ public:
         RemoteCore
     };
 
-    static bool instanceExists();
-    static Client *instance();
-    static void destroy();
-    static void init(AbstractUi *);
+    Client(std::unique_ptr<AbstractUi>, QObject *parent = nullptr);
+    ~Client() override;
+
     static AbstractUi *mainUi();
 
     static QList<NetworkId> networkIds();
@@ -115,6 +118,7 @@ public:
 
     static inline ClientAliasManager *aliasManager() { return instance()->_aliasManager; }
     static inline ClientBacklogManager *backlogManager() { return instance()->_backlogManager; }
+    static inline CoreInfo *coreInfo() { return instance()->_coreInfo; }
     static inline DccConfig *dccConfig() { return instance()->_dccConfig; }
     static inline ClientIrcListHelper *ircListHelper() { return instance()->_ircListHelper; }
     static inline ClientBufferViewManager *bufferViewManager() { return instance()->_bufferViewManager; }
@@ -147,6 +151,17 @@ public:
     static void mergeBuffersPermanently(BufferId bufferId1, BufferId bufferId2);
     static void purgeKnownBufferIds();
 
+    /**
+     * Requests client to resynchronize the CoreInfo object for legacy (pre-0.13) cores
+     *
+     * This provides compatibility with updating core information for legacy cores, and can be
+     * removed after protocol break.
+     *
+     * NOTE: On legacy (pre-0.13) cores, any existing connected signals will be destroyed and must
+     * be re-added after calling this, in addition to checking for existing data in coreInfo().
+     */
+    static void refreshLegacyCoreInfo();
+
     static void changePassword(const QString &oldPassword, const QString &newPassword);
     static void kickClient(int peerId);
 
@@ -154,27 +169,54 @@ public:
         emit showIgnoreList(ignoreRule);
     }
 
-#if QT_VERSION < 0x050000
-    static void logMessage(QtMsgType type, const char *msg);
-#else
-    static void logMessage(QtMsgType, const QMessageLogContext&, const QString&);
-#endif
-    static inline const QString &debugLog() { return instance()->_debugLogBuffer; }
-
-    void displayChannelList(NetworkId networkId) {
-        emit showChannelList(networkId);
+    /**
+     * Request to show the channel list dialog for the network, optionally searching by channel name
+     *
+     * @see Client::showChannelList()
+     *
+     * @param networkId        Network ID for associated network
+     * @param channelFilters   Partial channel name to search for, or empty to show all
+     * @param listImmediately  If true, immediately list channels, otherwise just show dialog
+     */
+    void displayChannelList(NetworkId networkId, const QString &channelFilters = {},
+                            bool listImmediately = false)
+    {
+        emit showChannelList(networkId, channelFilters, listImmediately);
     }
 
 signals:
     void requestNetworkStates();
 
     void showConfigWizard(const QVariantMap &coredata);
-    void showChannelList(NetworkId networkId);
+
+    /**
+     * Request to show the channel list dialog for the network, optionally searching by channel name
+     *
+     * @see MainWin::showChannelList()
+     *
+     * @param networkId        Network ID for associated network
+     * @param channelFilters   Partial channel name to search for, or empty to show all
+     * @param listImmediately  If true, immediately list channels, otherwise just show dialog
+     */
+    void showChannelList(NetworkId networkId, const QString &channelFilters = {},
+                         bool listImmediately = false);
+
     void showIgnoreList(QString ignoreRule);
 
     void connected();
     void disconnected();
     void coreConnectionStateChanged(bool);
+
+    /**
+     * Signals that core information has been resynchronized, removing existing signal handlers
+     *
+     * Whenever this is emitted, one should re-add any handlers for CoreInfo::coreDataChanged() and
+     * apply any existing information in the coreInfo() object.
+     *
+     * Only emitted on legacy (pre-0.13) cores.  Generally, one should use the
+     * CoreInfo::coreDataChanged() signal too.
+     */
+    void coreInfoResynchronized();
 
     //! The identity with the given ID has been newly created in core and client.
     /** \param id The ID of the newly created identity.
@@ -200,8 +242,6 @@ signals:
     void requestCreateNetwork(const NetworkInfo &info, const QStringList &persistentChannels = QStringList());
     void requestRemoveNetwork(NetworkId);
 
-    void logUpdated(const QString &msg);
-
     //! Emitted when a buffer has been marked as read
     /** This is currently triggered by setting lastSeenMsg, either local or remote,
      *  or by bringing the window to front.
@@ -215,6 +255,12 @@ signals:
     void requestKickClient(int peerId);
     void passwordChanged(bool success);
 
+    //! Emitted when database schema upgrade starts or ends (only mono client)
+    void dbUpgradeInProgress(bool inProgress);
+
+    //! Emitted before an exit request is handled
+    void exitRequested(const QString &reason);
+
 public slots:
     void disconnectFromCore();
 
@@ -223,6 +269,9 @@ public slots:
     void buffersPermanentlyMerged(BufferId bufferId1, BufferId bufferId2);
 
     void markBufferAsRead(BufferId id);
+
+    void onDbUpgradeInProgress(bool inProgress);
+    void onExitRequested(int exitCode, const QString &reason);
 
 private slots:
     void setSyncedToCore();
@@ -245,18 +294,23 @@ private slots:
     void sendBufferedUserInput();
 
 private:
-    Client(QObject *parent = 0);
-    virtual ~Client();
-    void init();
-
     void requestInitialBacklog();
+
+    /**
+     * Deletes and resynchronizes the CoreInfo object for legacy (pre-0.13) cores
+     *
+     * This provides compatibility with updating core information for legacy cores, and can be
+     * removed after protocol break.
+     *
+     * NOTE: On legacy (pre-0.13) cores, any existing connected signals will be destroyed and must
+     * be re-added after calling this, in addition to checking for existing data in coreInfo().
+     */
+    void requestLegacyCoreInfo();
 
     static void addNetwork(Network *);
 
-    static QPointer<Client> instanceptr;
-
     SignalProxy *_signalProxy;
-    AbstractUi *_mainUi;
+    std::unique_ptr<AbstractUi> _mainUi;
     NetworkModel *_networkModel;
     BufferModel *_bufferModel;
     BufferSyncer *_bufferSyncer;
@@ -264,6 +318,7 @@ private:
     ClientBacklogManager *_backlogManager;
     ClientBufferViewManager *_bufferViewManager;
     BufferViewOverlay *_bufferViewOverlay;
+    CoreInfo *_coreInfo;
     DccConfig *_dccConfig;
     ClientIrcListHelper *_ircListHelper;
     ClientUserInputHandler *_inputHandler;
@@ -285,9 +340,6 @@ private:
     QHash<IdentityId, Identity *> _identities;
 
     bool _connected;
-
-    QString _debugLogBuffer;
-    QTextStream _debugLog;
 
     QList<QPair<BufferInfo, QString> > _userInputBuffer;
 

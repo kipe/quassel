@@ -79,9 +79,10 @@
 #include "coreinfodlg.h"
 #include "contextmenuactionprovider.h"
 #include "debugbufferviewoverlay.h"
-#include "debuglogwidget.h"
+#include "debuglogdlg.h"
 #include "debugmessagemodelfilter.h"
 #include "flatproxymodel.h"
+#include "icon.h"
 #include "inputwidget.h"
 #include "irclistmodel.h"
 #include "ircconnectionwizard.h"
@@ -114,6 +115,7 @@
 #else /* HAVE_KDE */
 #  include "knotificationbackend.h"
 #endif /* HAVE_KDE */
+#include "systrayanimationnotificationbackend.h"
 
 
 #ifdef HAVE_LIBSNORE
@@ -192,6 +194,8 @@ MainWin::MainWin(QWidget *parent)
 
     setWindowTitle("Quassel IRC");
     setWindowIconText("Quassel IRC");
+    // Set the default icon for all windows
+    QApplication::setWindowIcon(icon::get("quassel"));
     updateIcon();
 }
 
@@ -202,10 +206,17 @@ void MainWin::init()
     connect(Client::instance(), SIGNAL(networkRemoved(NetworkId)), SLOT(clientNetworkRemoved(NetworkId)));
     connect(Client::messageModel(), SIGNAL(rowsInserted(const QModelIndex &, int, int)),
         SLOT(messagesInserted(const QModelIndex &, int, int)));
-    connect(GraphicalUi::contextMenuActionProvider(), SIGNAL(showChannelList(NetworkId)), SLOT(showChannelList(NetworkId)));
-    connect(Client::instance(), SIGNAL(showChannelList(NetworkId)), SLOT(showChannelList(NetworkId)));
+    connect(GraphicalUi::contextMenuActionProvider(),
+            SIGNAL(showChannelList(NetworkId,QString,bool)),
+            SLOT(showChannelList(NetworkId,QString,bool)));
+    connect(Client::instance(),
+            SIGNAL(showChannelList(NetworkId,QString,bool)),
+            SLOT(showChannelList(NetworkId,QString,bool)));
+    connect(GraphicalUi::contextMenuActionProvider(), SIGNAL(showNetworkConfig(NetworkId)), SLOT(showNetworkConfig(NetworkId)));
     connect(GraphicalUi::contextMenuActionProvider(), SIGNAL(showIgnoreList(QString)), SLOT(showIgnoreList(QString)));
     connect(Client::instance(), SIGNAL(showIgnoreList(QString)), SLOT(showIgnoreList(QString)));
+    connect(Client::instance(), SIGNAL(dbUpgradeInProgress(bool)), SLOT(showMigrationWarning(bool)));
+    connect(Client::instance(), SIGNAL(exitRequested(QString)), SLOT(onExitRequested(QString)));
 
     connect(Client::coreConnection(), SIGNAL(startCoreSetup(QVariantList, QVariantList)), SLOT(showCoreConfigWizard(QVariantList, QVariantList)));
     connect(Client::coreConnection(), SIGNAL(connectionErrorPopup(QString)), SLOT(handleCoreConnectionError(QString)));
@@ -255,6 +266,9 @@ void MainWin::init()
 #endif /* HAVE_KDE */
 
 
+#ifndef QT_NO_SYSTEMTRAYICON
+    QtUi::registerNotificationBackend(new SystrayAnimationNotificationBackend(this));
+#endif
 #ifdef HAVE_LIBSNORE
     QtUi::registerNotificationBackend(new SnoreNotificationBackend(this));
 #elif !defined(QT_NO_SYSTEMTRAYICON) && !defined(HAVE_KDE)
@@ -291,25 +305,17 @@ void MainWin::init()
     // restore locked state of docks
     QtUi::actionCollection("General")->action("LockLayout")->setChecked(s.value("LockLayout", false).toBool());
 
-    CoreConnection *conn = Client::coreConnection();
-    if (!conn->connectToCore()) {
-        // No autoconnect selected (or no accounts)
-        showCoreConnectionDlg();
-    }
-}
+    Quassel::registerQuitHandler([this]() {
+        QtUiSettings s;
+        saveStateToSettings(s);
+        saveLayout();
+        // Close all open dialogs and the MainWin, so we can safely kill the Client instance afterwards
+        // Note: This does not quit the application, as quitOnLastWindowClosed is set to false.
+        //       We rely on another quit handler to be registered that actually quits the application.
+        qApp->closeAllWindows();
+    });
 
-
-MainWin::~MainWin()
-{
-}
-
-
-void MainWin::quit()
-{
-    QtUiSettings s;
-    saveStateToSettings(s);
-    saveLayout();
-    QApplication::quit();
+    QTimer::singleShot(0, this, SLOT(doAutoConnect()));
 }
 
 
@@ -379,11 +385,10 @@ void MainWin::updateIcon()
 {
     QIcon icon;
     if (Client::isConnected())
-        icon = QIcon::fromTheme("quassel", QIcon(":/icons/quassel-128.png"));
+        icon = icon::get("quassel");
     else
-        icon = QIcon::fromTheme("inactive-quassel", QIcon(":/icons/inactive-quassel.png"));
+        icon = icon::get("inactive-quassel");
     setWindowIcon(icon);
-    qApp->setWindowIcon(icon);
 }
 
 
@@ -391,19 +396,23 @@ void MainWin::setupActions()
 {
     ActionCollection *coll = QtUi::actionCollection("General", tr("General"));
     // File
-    coll->addAction("ConnectCore", new Action(QIcon::fromTheme("connect-quassel", QIcon(":/icons/connect-quassel.png")), tr("&Connect to Core..."), coll,
+    coll->addAction("ConnectCore", new Action(icon::get("connect-quassel"), tr("&Connect to Core..."), coll,
             this, SLOT(showCoreConnectionDlg())));
-    coll->addAction("DisconnectCore", new Action(QIcon::fromTheme("disconnect-quassel", QIcon(":/icons/disconnect-quassel.png")), tr("&Disconnect from Core"), coll,
+    coll->addAction("DisconnectCore", new Action(icon::get("disconnect-quassel"), tr("&Disconnect from Core"), coll,
             Client::instance(), SLOT(disconnectFromCore())));
-    coll->addAction("ChangePassword", new Action(QIcon::fromTheme("dialog-password"), tr("Change &Password..."), coll,
+    coll->addAction("ChangePassword", new Action(icon::get("dialog-password"), tr("Change &Password..."), coll,
             this, SLOT(showPasswordChangeDlg())));
-    coll->addAction("CoreInfo", new Action(QIcon::fromTheme("help-about"), tr("Core &Info..."), coll,
+    coll->addAction("CoreInfo", new Action(icon::get("help-about"), tr("Core &Info..."), coll,
             this, SLOT(showCoreInfoDlg())));
-    coll->addAction("ConfigureNetworks", new Action(QIcon::fromTheme("configure"), tr("Configure &Networks..."), coll,
+    coll->addAction("ConfigureNetworks", new Action(icon::get("configure"), tr("Configure &Networks..."), coll,
             this, SLOT(on_actionConfigureNetworks_triggered())));
-    // FIXME: use QKeySequence::Quit once we depend on Qt 4.6
-    coll->addAction("Quit", new Action(QIcon::fromTheme("application-exit"), tr("&Quit"), coll,
-            this, SLOT(quit()), Qt::CTRL + Qt::Key_Q));
+    // QKeySequence::Quit was added in Qt 4.6, and could be used instead.  However, that key
+    // sequence is empty by default on Windows, which would remove Ctrl-Q to quit.  It may be best
+    // to just keep it this way.
+    //
+    // See https://doc.qt.io/qt-5/qkeysequence.html
+    coll->addAction("Quit", new Action(icon::get("application-exit"), tr("&Quit"), coll,
+            Quassel::instance(), SLOT(quit()), Qt::CTRL + Qt::Key_Q));
 
     // View
     coll->addAction("ConfigureBufferViews", new Action(tr("&Configure Chat Lists..."), coll,
@@ -413,11 +422,11 @@ void MainWin::setupActions()
     lockAct->setCheckable(true);
     connect(lockAct, SIGNAL(toggled(bool)), SLOT(on_actionLockLayout_toggled(bool)));
 
-    coll->addAction("ToggleSearchBar", new Action(QIcon::fromTheme("edit-find"), tr("Show &Search Bar"), coll,
+    coll->addAction("ToggleSearchBar", new Action(icon::get("edit-find"), tr("Show &Search Bar"), coll,
             0, 0, QKeySequence::Find))->setCheckable(true);
     coll->addAction("ShowAwayLog", new Action(tr("Show Away Log"), coll,
             this, SLOT(showAwayLog())));
-    coll->addAction("ToggleMenuBar", new Action(QIcon::fromTheme("show-menu"), tr("Show &Menubar"), coll,
+    coll->addAction("ToggleMenuBar", new Action(icon::get("show-menu"), tr("Show &Menubar"), coll,
             0, 0))->setCheckable(true);
 
     coll->addAction("ToggleStatusBar", new Action(tr("Show Status &Bar"), coll,
@@ -426,30 +435,30 @@ void MainWin::setupActions()
 #ifdef HAVE_KDE
     _fullScreenAction = KStandardAction::fullScreen(this, SLOT(onFullScreenToggled()), this, coll);
 #else
-    _fullScreenAction = new Action(QIcon::fromTheme("view-fullscreen"), tr("&Full Screen Mode"), coll,
+    _fullScreenAction = new Action(icon::get("view-fullscreen"), tr("&Full Screen Mode"), coll,
         this, SLOT(onFullScreenToggled()), QKeySequence(Qt::Key_F11));
     _fullScreenAction->setCheckable(true);
     coll->addAction("ToggleFullScreen", _fullScreenAction);
 #endif
 
     // Settings
-    QAction *configureShortcutsAct = new Action(QIcon::fromTheme("configure-shortcuts"), tr("Configure &Shortcuts..."), coll,
+    QAction *configureShortcutsAct = new Action(icon::get("configure-shortcuts"), tr("Configure &Shortcuts..."), coll,
         this, SLOT(showShortcutsDlg()));
     configureShortcutsAct->setMenuRole(QAction::NoRole);
     coll->addAction("ConfigureShortcuts", configureShortcutsAct);
 
 #ifdef Q_OS_MAC
-    QAction *configureQuasselAct = new Action(QIcon::fromTheme("configure"), tr("&Configure Quassel..."), coll,
+    QAction *configureQuasselAct = new Action(icon::get("configure"), tr("&Configure Quassel..."), coll,
         this, SLOT(showSettingsDlg()));
     configureQuasselAct->setMenuRole(QAction::PreferencesRole);
 #else
-    QAction *configureQuasselAct = new Action(QIcon::fromTheme("configure"), tr("&Configure Quassel..."), coll,
+    QAction *configureQuasselAct = new Action(icon::get("configure"), tr("&Configure Quassel..."), coll,
         this, SLOT(showSettingsDlg()), QKeySequence(Qt::Key_F7));
 #endif
     coll->addAction("ConfigureQuassel", configureQuasselAct);
 
     // Help
-    QAction *aboutQuasselAct = new Action(QIcon(":/icons/quassel.png"), tr("&About Quassel"), coll,
+    QAction *aboutQuasselAct = new Action(icon::get("quassel"), tr("&About Quassel"), coll,
         this, SLOT(showAboutDlg()));
     aboutQuasselAct->setMenuRole(QAction::AboutRole);
     coll->addAction("AboutQuassel", aboutQuasselAct);
@@ -458,21 +467,53 @@ void MainWin::setupActions()
         qApp, SLOT(aboutQt()));
     aboutQtAct->setMenuRole(QAction::AboutQtRole);
     coll->addAction("AboutQt", aboutQtAct);
-    coll->addAction("DebugNetworkModel", new Action(QIcon::fromTheme("tools-report-bug"), tr("Debug &NetworkModel"), coll,
+    coll->addAction("DebugNetworkModel", new Action(icon::get("tools-report-bug"), tr("Debug &NetworkModel"), coll,
             this, SLOT(on_actionDebugNetworkModel_triggered())));
-    coll->addAction("DebugBufferViewOverlay", new Action(QIcon::fromTheme("tools-report-bug"), tr("Debug &BufferViewOverlay"), coll,
+    coll->addAction("DebugBufferViewOverlay", new Action(icon::get("tools-report-bug"), tr("Debug &BufferViewOverlay"), coll,
             this, SLOT(on_actionDebugBufferViewOverlay_triggered())));
-    coll->addAction("DebugMessageModel", new Action(QIcon::fromTheme("tools-report-bug"), tr("Debug &MessageModel"), coll,
+    coll->addAction("DebugMessageModel", new Action(icon::get("tools-report-bug"), tr("Debug &MessageModel"), coll,
             this, SLOT(on_actionDebugMessageModel_triggered())));
-    coll->addAction("DebugHotList", new Action(QIcon::fromTheme("tools-report-bug"), tr("Debug &HotList"), coll,
+    coll->addAction("DebugHotList", new Action(icon::get("tools-report-bug"), tr("Debug &HotList"), coll,
             this, SLOT(on_actionDebugHotList_triggered())));
-    coll->addAction("DebugLog", new Action(QIcon::fromTheme("tools-report-bug"), tr("Debug &Log"), coll,
+    coll->addAction("DebugLog", new Action(icon::get("tools-report-bug"), tr("Debug &Log"), coll,
             this, SLOT(on_actionDebugLog_triggered())));
-    coll->addAction("ReloadStyle", new Action(QIcon::fromTheme("view-refresh"), tr("Reload Stylesheet"), coll,
-            QtUi::style(), SLOT(reload()), QKeySequence::Refresh));
+    coll->addAction("ReloadStyle", new Action(icon::get("view-refresh"), tr("Reload Stylesheet"), coll,
+            QtUi::style(), SLOT(reload()), QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_R)));
 
     coll->addAction("HideCurrentBuffer", new Action(tr("Hide Current Buffer"), coll,
             this, SLOT(hideCurrentBuffer()), QKeySequence::Close));
+
+    // Text formatting
+    coll = QtUi::actionCollection("TextFormat", tr("Text formatting"));
+
+    coll->addAction("FormatApplyColor", new Action(
+                        icon::get("format-text-color"), tr("Apply foreground color"), coll,
+                        this, SLOT(on_inputFormatApplyColor_triggered()),
+                        QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_G)));
+
+    coll->addAction("FormatApplyColorFill", new Action(
+                        icon::get("format-fill-color"), tr("Apply background color"), coll,
+                        this, SLOT(on_inputFormatApplyColorFill_triggered()),
+                        QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_B)));
+
+    coll->addAction("FormatClear", new Action(
+                        icon::get("edit-clear"), tr("Clear formatting"), coll,
+                        this, SLOT(on_inputFormatClear_triggered()),
+                        QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_C)));
+
+    coll->addAction("FormatBold", new Action(
+                        icon::get("format-text-bold"), tr("Toggle bold"), coll,
+                        this, SLOT(on_inputFormatBold_triggered()),
+                        QKeySequence::Bold));
+
+    coll->addAction("FormatItalic", new Action(
+                        icon::get("format-text-italic"), tr("Toggle italics"), coll,
+                        this, SLOT(on_inputFormatItalic_triggered()),
+                        QKeySequence::Italic));
+
+    coll->addAction("FormatUnderline", new Action(
+                        icon::get("format-text-underline"), tr("Toggle underline"), coll,
+                        this, SLOT(on_inputFormatUnderline_triggered()), QKeySequence::Underline));
 
     // Navigation
     coll = QtUi::actionCollection("Navigation", tr("Navigation"));
@@ -575,13 +616,13 @@ void MainWin::setupActions()
             QKeySequence(jumpModifier + Qt::Key_P)))->setProperty("Index", 19);
 
     // Buffer navigation
-    coll->addAction("NextBufferView", new Action(QIcon::fromTheme("go-next-view"), tr("Activate Next Chat List"), coll,
+    coll->addAction("NextBufferView", new Action(icon::get("go-next-view"), tr("Activate Next Chat List"), coll,
             this, SLOT(nextBufferView()), QKeySequence(QKeySequence::Forward)));
-    coll->addAction("PreviousBufferView", new Action(QIcon::fromTheme("go-previous-view"), tr("Activate Previous Chat List"), coll,
+    coll->addAction("PreviousBufferView", new Action(icon::get("go-previous-view"), tr("Activate Previous Chat List"), coll,
             this, SLOT(previousBufferView()), QKeySequence::Back));
-    coll->addAction("NextBuffer", new Action(QIcon::fromTheme("go-down"), tr("Go to Next Chat"), coll,
+    coll->addAction("NextBuffer", new Action(icon::get("go-down"), tr("Go to Next Chat"), coll,
             this, SLOT(nextBuffer()), QKeySequence(Qt::ALT + Qt::Key_Down)));
-    coll->addAction("PreviousBuffer", new Action(QIcon::fromTheme("go-up"), tr("Go to Previous Chat"), coll,
+    coll->addAction("PreviousBuffer", new Action(icon::get("go-up"), tr("Go to Previous Chat"), coll,
             this, SLOT(previousBuffer()), QKeySequence(Qt::ALT + Qt::Key_Up)));
 }
 
@@ -645,7 +686,7 @@ void MainWin::setupMenus()
     _helpMenu->addAction(KStandardAction::aboutKDE(_kHelpMenu, SLOT(aboutKDE()), this));
 #endif
     _helpMenu->addSeparator();
-    _helpDebugMenu = _helpMenu->addMenu(QIcon::fromTheme("tools-report-bug"), tr("Debug"));
+    _helpDebugMenu = _helpMenu->addMenu(icon::get("tools-report-bug"), tr("Debug"));
     _helpDebugMenu->addAction(coll->action("DebugNetworkModel"));
     _helpDebugMenu->addAction(coll->action("DebugBufferViewOverlay"));
     _helpDebugMenu->addAction(coll->action("DebugMessageModel"));
@@ -818,14 +859,49 @@ void MainWin::changeActiveBufferView(int bufferViewId)
 void MainWin::showPasswordChangeDlg()
 {
     if(Client::isCoreFeatureEnabled(Quassel::Feature::PasswordChange)) {
-        PasswordChangeDlg dlg(this);
-        dlg.exec();
+        PasswordChangeDlg{}.exec();
     }
     else {
         QMessageBox box(QMessageBox::Warning, tr("Feature Not Supported"),
                         tr("<b>Your Quassel Core does not support this feature</b>"),
-                        QMessageBox::Ok, this);
+                        QMessageBox::Ok);
         box.setInformativeText(tr("You need a Quassel Core v0.12.0 or newer in order to be able to remotely change your password."));
+        box.exec();
+    }
+}
+
+
+void MainWin::showMigrationWarning(bool show)
+{
+    if (show && !_migrationWarning) {
+        _migrationWarning = new QMessageBox(QMessageBox::Information,
+                                            tr("Upgrading..."),
+                                            "<b>" + tr("Your database is being upgraded") + "</b>",
+                                            QMessageBox::NoButton, this);
+        _migrationWarning->setInformativeText("<p>"
+                                              + tr("In order to support new features, we need to make changes to your backlog database. This may take a long while.")
+                                              + "</p><p>"
+                                              + tr("Do not exit Quassel until the upgrade is complete!")
+                                              + "</p>");
+        _migrationWarning->setStandardButtons(QMessageBox::NoButton);
+        _migrationWarning->show();
+    }
+    else if (!show && _migrationWarning) {
+        _migrationWarning->close();
+        _migrationWarning->deleteLater();
+        _migrationWarning = nullptr;
+    }
+}
+
+
+void MainWin::onExitRequested(const QString &reason)
+{
+    if (!reason.isEmpty()) {
+        QMessageBox box(QMessageBox::Critical,
+                        tr("Fatal error"),
+                        "<b>" + tr("Quassel encountered a fatal error and is terminated.") + "</b>",
+                        QMessageBox::Ok);
+        box.setInformativeText("<p>" + tr("Reason:<em>") + " " + reason + "</em>");
         box.exec();
     }
 }
@@ -901,22 +977,19 @@ void MainWin::hideCurrentBuffer()
 
 void MainWin::showNotificationsDlg()
 {
-    SettingsPageDlg dlg(new NotificationsSettingsPage(this), this);
-    dlg.exec();
+    SettingsPageDlg{new NotificationsSettingsPage{}}.exec();
 }
 
 
 void MainWin::on_actionConfigureNetworks_triggered()
 {
-    SettingsPageDlg dlg(new NetworksSettingsPage(this), this);
-    dlg.exec();
+    SettingsPageDlg{new NetworksSettingsPage{}}.exec();
 }
 
 
 void MainWin::on_actionConfigureViews_triggered()
 {
-    SettingsPageDlg dlg(new BufferViewSettingsPage(this), this);
-    dlg.exec();
+    SettingsPageDlg{new BufferViewSettingsPage{}}.exec();
 }
 
 
@@ -1047,7 +1120,7 @@ void MainWin::setupTransferWidget()
 
     auto action = dock->toggleViewAction();
     action->setText(tr("Show File Transfers"));
-    action->setIcon(QIcon::fromTheme("download"));
+    action->setIcon(icon::get("download"));
     action->setShortcut(QKeySequence(Qt::Key_F6));
     QtUi::actionCollection("General")->addAction("ShowTransferWidget", action);
     _viewMenu->addAction(action);
@@ -1123,7 +1196,6 @@ void MainWin::setupSystray()
 #else
     _systemTray = new SystemTray(this); // dummy
 #endif
-    _systemTray->init();
 }
 
 
@@ -1189,6 +1261,15 @@ void MainWin::saveMainToolBarStatus(bool enabled)
 #else
     Q_UNUSED(enabled);
 #endif
+}
+
+
+void MainWin::doAutoConnect()
+{
+    if (!Client::coreConnection()->connectToCore()) {
+        // No autoconnect selected (or no accounts)
+        showCoreConnectionDlg();
+    }
 }
 
 
@@ -1344,7 +1425,7 @@ void MainWin::setDisconnectedState()
 void MainWin::userAuthenticationRequired(CoreAccount *account, bool *valid, const QString &errorMessage)
 {
     Q_UNUSED(errorMessage)
-    CoreConnectAuthDlg dlg(account, this);
+    CoreConnectAuthDlg dlg(account);
     *valid = (dlg.exec() == QDialog::Accepted);
 }
 
@@ -1352,7 +1433,7 @@ void MainWin::userAuthenticationRequired(CoreAccount *account, bool *valid, cons
 void MainWin::handleNoSslInClient(bool *accepted)
 {
     QMessageBox box(QMessageBox::Warning, tr("Unencrypted Connection"), tr("<b>Your client does not support SSL encryption</b>"),
-        QMessageBox::Ignore|QMessageBox::Cancel, this);
+        QMessageBox::Ignore|QMessageBox::Cancel);
     box.setInformativeText(tr("Sensitive data, like passwords, will be transmitted unencrypted to your Quassel core."));
     box.setDefaultButton(QMessageBox::Ignore);
     *accepted = box.exec() == QMessageBox::Ignore;
@@ -1362,7 +1443,7 @@ void MainWin::handleNoSslInClient(bool *accepted)
 void MainWin::handleNoSslInCore(bool *accepted)
 {
     QMessageBox box(QMessageBox::Warning, tr("Unencrypted Connection"), tr("<b>Your core does not support SSL encryption</b>"),
-        QMessageBox::Ignore|QMessageBox::Cancel, this);
+        QMessageBox::Ignore|QMessageBox::Cancel);
     box.setInformativeText(tr("Sensitive data, like passwords, will be transmitted unencrypted to your Quassel core."));
     box.setDefaultButton(QMessageBox::Ignore);
     *accepted = box.exec() == QMessageBox::Ignore;
@@ -1381,7 +1462,7 @@ void MainWin::handleSslErrors(const QSslSocket *socket, bool *accepted, bool *pe
     QMessageBox box(QMessageBox::Warning,
         tr("Untrusted Security Certificate"),
         tr("<b>The SSL certificate provided by the core at %1 is untrusted for the following reasons:</b>").arg(socket->peerName()),
-        QMessageBox::Cancel, this);
+        QMessageBox::Cancel);
     box.setInformativeText(errorString);
     box.addButton(tr("Continue"), QMessageBox::AcceptRole);
     box.setDefaultButton(box.addButton(tr("Show Certificate"), QMessageBox::HelpRole));
@@ -1391,7 +1472,7 @@ void MainWin::handleSslErrors(const QSslSocket *socket, bool *accepted, bool *pe
         box.exec();
         role = box.buttonRole(box.clickedButton());
         if (role == QMessageBox::HelpRole) {
-            SslInfoDlg dlg(socket, this);
+            SslInfoDlg dlg(socket);
             dlg.exec();
         }
     }
@@ -1402,7 +1483,7 @@ void MainWin::handleSslErrors(const QSslSocket *socket, bool *accepted, bool *pe
         QMessageBox box2(QMessageBox::Warning,
             tr("Untrusted Security Certificate"),
             tr("Would you like to accept this certificate forever without being prompted?"),
-            0, this);
+            0);
         box2.setDefaultButton(box2.addButton(tr("Current Session Only"), QMessageBox::NoRole));
         box2.addButton(tr("Forever"), QMessageBox::YesRole);
         box2.exec();
@@ -1421,7 +1502,7 @@ void MainWin::handleCoreConnectionError(const QString &error)
 
 void MainWin::showCoreConnectionDlg()
 {
-    CoreConnectDlg dlg(this);
+    CoreConnectDlg dlg;
     if (dlg.exec() == QDialog::Accepted) {
         AccountId accId = dlg.selectedAccount();
         if (accId.isValid())
@@ -1438,25 +1519,49 @@ void MainWin::showCoreConfigWizard(const QVariantList &backends, const QVariantL
 }
 
 
-void MainWin::showChannelList(NetworkId netId)
+void MainWin::showChannelList(NetworkId netId, const QString &channelFilters, bool listImmediately)
 {
-    ChannelListDlg *channelListDlg = new ChannelListDlg();
-
     if (!netId.isValid()) {
         QAction *action = qobject_cast<QAction *>(sender());
         if (action)
             netId = action->data().value<NetworkId>();
+        if (!netId.isValid()) {
+            // We still haven't found a valid network, probably no network selected, e.g. "/list"
+            // on the client homescreen when no networks are connected.
+            QMessageBox box(QMessageBox::Information, tr("No network selected"),
+                            QString("<b>%1</b>").arg(tr("No network selected")),
+                            QMessageBox::Ok);
+            box.setInformativeText(tr("Select a network before trying to view the channel list."));
+            box.exec();
+            return;
+        }
     }
 
+    ChannelListDlg *channelListDlg = new ChannelListDlg(this);
     channelListDlg->setAttribute(Qt::WA_DeleteOnClose);
     channelListDlg->setNetwork(netId);
+    if (!channelFilters.isEmpty()) {
+        channelListDlg->setChannelFilters(channelFilters);
+    }
+    if (listImmediately) {
+        channelListDlg->requestSearch();
+    }
     channelListDlg->show();
+}
+
+
+void MainWin::showNetworkConfig(NetworkId netId)
+{
+    SettingsPageDlg dlg{new NetworksSettingsPage{}};
+    if (netId.isValid())
+        qobject_cast<NetworksSettingsPage *>(dlg.currentPage())->bufferList_Open(netId);
+    dlg.exec();
 }
 
 
 void MainWin::showIgnoreList(QString newRule)
 {
-    SettingsPageDlg dlg(new IgnoreListSettingsPage(this), this);
+    SettingsPageDlg dlg{new IgnoreListSettingsPage{}};
     // prepare config dialog for new rule
     if (!newRule.isEmpty())
         qobject_cast<IgnoreListSettingsPage *>(dlg.currentPage())->editIgnoreRule(newRule);
@@ -1466,7 +1571,7 @@ void MainWin::showIgnoreList(QString newRule)
 
 void MainWin::showCoreInfoDlg()
 {
-    CoreInfoDlg(this).exec();
+    CoreInfoDlg{}.exec();
 }
 
 
@@ -1491,7 +1596,7 @@ void MainWin::awayLogDestroyed()
 
 void MainWin::showSettingsDlg()
 {
-    SettingsDlg *dlg = new SettingsDlg();
+    SettingsDlg *dlg = new SettingsDlg(this);
 
     //Category: Interface
     dlg->registerSettingsPage(new AppearanceSettingsPage(dlg));
@@ -1530,20 +1635,19 @@ void MainWin::showSettingsDlg()
 
 void MainWin::showAboutDlg()
 {
-    AboutDlg(this).exec();
+    AboutDlg{}.exec();
 }
 
 
 void MainWin::showShortcutsDlg()
 {
 #ifdef HAVE_KDE
-    KShortcutsDialog dlg(KShortcutsEditor::AllActions, KShortcutsEditor::LetterShortcutsDisallowed, this);
+    KShortcutsDialog dlg(KShortcutsEditor::AllActions, KShortcutsEditor::LetterShortcutsDisallowed);
     foreach(KActionCollection *coll, QtUi::actionCollections())
     dlg.addCollection(coll, coll->property("Category").toString());
     dlg.configure(true);
 #else
-    SettingsPageDlg dlg(new ShortcutsSettingsPage(QtUi::actionCollections(), this), this);
-    dlg.exec();
+    SettingsPageDlg{new ShortcutsSettingsPage{QtUi::actionCollections()}}.exec();
 #endif
 }
 
@@ -1634,7 +1738,7 @@ void MainWin::closeEvent(QCloseEvent *event)
     else if(!_aboutToQuit) {
         _aboutToQuit = true;
         event->accept();
-        quit();
+        Quassel::instance()->quit();
     }
     else {
         event->ignore();
@@ -1741,7 +1845,7 @@ void MainWin::clientNetworkUpdated()
 
     switch (net->connectionState()) {
     case Network::Initialized:
-        action->setIcon(QIcon::fromTheme("network-connect"));
+        action->setIcon(icon::get("network-connect"));
         // if we have no currently selected buffer, jump to the first connecting statusbuffer
         if (!bufferWidget()->currentBuffer().isValid()) {
             QModelIndex idx = Client::networkModel()->networkIndex(net->networkId());
@@ -1752,10 +1856,10 @@ void MainWin::clientNetworkUpdated()
         }
         break;
     case Network::Disconnected:
-        action->setIcon(QIcon::fromTheme("network-disconnect"));
+        action->setIcon(icon::get("network-disconnect"));
         break;
     default:
-        action->setIcon(QIcon::fromTheme("network-wired"));
+        action->setIcon(icon::get("network-wired"));
     }
 }
 
@@ -1778,6 +1882,60 @@ void MainWin::connectOrDisconnectFromNet()
     if (!net) return;
     if (net->connectionState() == Network::Disconnected) net->requestConnect();
     else net->requestDisconnect();
+}
+
+
+void MainWin::on_inputFormatApplyColor_triggered()
+{
+    if (!_inputWidget)
+        return;
+
+    _inputWidget->applyFormatActiveColor();
+}
+
+
+void MainWin::on_inputFormatApplyColorFill_triggered()
+{
+    if (!_inputWidget)
+        return;
+
+    _inputWidget->applyFormatActiveColorFill();
+}
+
+
+void MainWin::on_inputFormatClear_triggered()
+{
+    if (!_inputWidget)
+        return;
+
+    _inputWidget->clearFormat();
+}
+
+
+void MainWin::on_inputFormatBold_triggered()
+{
+    if (!_inputWidget)
+        return;
+
+    _inputWidget->toggleFormatBold();
+}
+
+
+void MainWin::on_inputFormatItalic_triggered()
+{
+    if (!_inputWidget)
+        return;
+
+    _inputWidget->toggleFormatItalic();
+}
+
+
+void MainWin::on_inputFormatUnderline_triggered()
+{
+    if (!_inputWidget)
+        return;
+
+    _inputWidget->toggleFormatUnderline();
 }
 
 
@@ -1880,8 +2038,8 @@ void MainWin::on_actionDebugMessageModel_triggered()
 
 void MainWin::on_actionDebugLog_triggered()
 {
-    DebugLogWidget *logWidget = new DebugLogWidget(0);
-    logWidget->show();
+    auto dlg = new DebugLogDlg(this);
+    dlg->show();
 }
 
 

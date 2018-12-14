@@ -79,3 +79,27 @@ QByteArray prettyDigest(const QByteArray &digest);
  * @return String with current date/time substituted in via formatting codes
  */
 QString formatCurrentDateTimeInString(const QString &formatStr);
+
+/**
+ * Try to localize a given date/time in seconds from Unix epoch, pass through string if invalid
+ *
+ * Allows compatibility with date/time fields that may or may not be in Unix epoch format,
+ * localizing if possible, leaving alone if not.
+ *
+ * @param possibleEpochDate Date/time that might be in seconds since Unix epoch format
+ * @param dateFormat        Desired format of the date/time string
+ * @param useUTC            If true, use UTC timezone, otherwise use local time
+ * @return Localized date/time if parse succeeded, otherwise the source string
+ */
+QString tryFormatUnixEpoch(const QString &possibleEpochDate,
+                           Qt::DateFormat dateFormat = Qt::DateFormat::TextDate,
+                           bool useUTC = false);
+
+
+/**
+ * Format the given date/time in ISO 8601 format with timezone offset
+ *
+ * @param dateTime Date/time of interest
+ * @return Date/time in ISO 8601 format with timezone offset
+ */
+QString formatDateTimeToOffsetISO(const QDateTime &dateTime);

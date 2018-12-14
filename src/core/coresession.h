@@ -18,13 +18,14 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CORESESSION_H
-#define CORESESSION_H
+#pragma once
 
+#include <QHash>
+#include <QSet>
 #include <QString>
 #include <QVariant>
 
-#include "corecoreinfo.h"
+#include "coreinfo.h"
 #include "corealiasmanager.h"
 #include "corehighlightrulemanager.h"
 #include "coreignorelistmanager.h"
@@ -62,14 +63,23 @@ class CoreSession : public QObject
     Q_OBJECT
 
 public:
-    CoreSession(UserId, bool restoreState, QObject *parent = 0);
-    ~CoreSession();
+    CoreSession(UserId, bool restoreState, bool strictIdentEnabled, QObject *parent = 0);
 
     QList<BufferInfo> buffers() const;
     inline UserId user() const { return _user; }
     CoreNetwork *network(NetworkId) const;
     CoreIdentity *identity(IdentityId) const;
-    const QString strictSysident();
+
+    /**
+     * Returns the optionally strict-compliant ident for the given user identity
+     *
+     * If strict mode is enabled, this will return the user's Quassel username for any identity,
+     * otherwise this will return the given identity's ident, whatever it may be.
+     *
+     * @return The user's ident, compliant with strict mode (when enabled)
+     */
+    const QString strictCompliantIdent(const CoreIdentity *identity);
+
     inline CoreNetworkConfig *networkConfig() const { return _networkConfig; }
     NetworkConnection *networkConnection(NetworkId) const;
 
@@ -101,6 +111,11 @@ public:
 public slots:
     void addClient(RemotePeer *peer);
     void addClient(InternalPeer *peer);
+
+    /**
+     * Shuts down the session and deletes itself afterwards.
+     */
+    void shutdown();
 
     void msgFromClient(BufferInfo, QString message);
 
@@ -137,6 +152,9 @@ public slots:
     void kickClient(int peerId);
 
     QHash<QString, QString> persistentChannels(NetworkId) const;
+
+    QHash<QString, QByteArray> bufferCiphers(NetworkId id) const;
+    void setBufferCipher(NetworkId id, const QString &bufferName, const QByteArray &cipher) const;
 
     /**
      * Marks us away (or unaway) on all networks
@@ -196,6 +214,8 @@ private slots:
 
     void saveSessionState() const;
 
+    void onNetworkDisconnected(NetworkId networkId);
+
 private:
     void processMessages();
 
@@ -207,12 +227,15 @@ private:
 
     UserId _user;
 
+    /// Whether or not strict ident mode is enabled, locking users' idents to Quassel username
+    bool _strictIdentEnabled;
+
     SignalProxy *_signalProxy;
     CoreAliasManager _aliasManager;
-    // QHash<NetworkId, NetworkConnection *> _connections;
-    QHash<NetworkId, CoreNetwork *> _networks;
-    //  QHash<NetworkId, CoreNetwork *> _networksToRemove;
+
     QHash<IdentityId, CoreIdentity *> _identities;
+    QHash<NetworkId, CoreNetwork *> _networks;
+    QSet<NetworkId> _networksPendingDisconnect;
 
     CoreBufferSyncer *_bufferSyncer;
     CoreBacklogManager *_backlogManager;
@@ -220,7 +243,7 @@ private:
     CoreDccConfig *_dccConfig;
     CoreIrcListHelper *_ircListHelper;
     CoreNetworkConfig *_networkConfig;
-    CoreCoreInfo _coreInfo;
+    CoreInfo *_coreInfo;
     CoreTransferManager *_transferManager;
 
     EventManager *_eventManager;
@@ -238,6 +261,20 @@ private:
      * @param bufferInfo The BufferInfo object of the buffer
      */
     QString senderPrefixes(const QString &sender, const BufferInfo &bufferInfo) const;
+
+    /**
+     * This method obtains the realname of the message's sender.
+     * @param sender The hostmask of the sender
+     * @param networkId The network the user is on
+     */
+    QString realName(const QString &sender, NetworkId networkId) const;
+
+    /**
+     * This method obtains the avatar of the message's sender.
+     * @param sender The hostmask of the sender
+     * @param networkId The network the user is on
+     */
+    QString avatarUrl(const QString &sender, NetworkId networkId) const;
     QList<RawMessage> _messageQueue;
     bool _processMessages;
     CoreIgnoreListManager _ignoreListManager;
@@ -256,5 +293,3 @@ struct RawMessage {
     RawMessage(NetworkId networkId, Message::Type type, BufferInfo::Type bufferType, const QString &target, const QString &text, const QString &sender, Message::Flags flags)
         : networkId(networkId), type(type), bufferType(bufferType), target(target), text(text), sender(sender), flags(flags) {}
 };
-
-#endif

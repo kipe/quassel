@@ -20,7 +20,6 @@
 
 #include "knotificationbackend.h"
 
-#include <QIcon>
 #include <QTextDocument>
 #include <QVBoxLayout>
 
@@ -33,6 +32,7 @@
 #endif
 
 #include "client.h"
+#include "icon.h"
 #include "mainwin.h"
 #include "networkmodel.h"
 #include "qtui.h"
@@ -66,7 +66,7 @@ void KNotificationBackend::notify(const Notification &n)
 #else
     QString message = QString("<b>&lt;%1&gt;</b> %2").arg(n.sender, n.message.toHtmlEscaped());
 #endif
-    KNotification *notification = KNotification::event(type, message, QIcon::fromTheme("dialog-information").pixmap(48), QtUi::mainWindow(),
+    KNotification *notification = KNotification::event(type, message, icon::get("dialog-information").pixmap(48), QtUi::mainWindow(),
         KNotification::RaiseWidgetOnActivation
         |KNotification::CloseWhenWidgetActivated
         |KNotification::CloseOnTimeout);
@@ -77,7 +77,6 @@ void KNotificationBackend::notify(const Notification &n)
     _notifications.append(qMakePair(n.notificationId, QPointer<KNotification>(notification)));
 
     updateToolTip();
-    QtUi::mainWindow()->systemTray()->setAlert(true);
 }
 
 
@@ -101,7 +100,6 @@ void KNotificationBackend::close(uint notificationId)
 {
     removeNotificationById(notificationId);
     //if(!_notifications.count()) // FIXME make configurable
-    QtUi::mainWindow()->systemTray()->setAlert(false);
 }
 
 

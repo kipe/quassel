@@ -23,10 +23,9 @@
 #include "corenetwork.h"
 #include "oidentdconfiggenerator.h"
 
-OidentdConfigGenerator::OidentdConfigGenerator(bool strict, QObject *parent) :
+OidentdConfigGenerator::OidentdConfigGenerator(QObject *parent) :
     QObject(parent),
-    _initialized(false),
-    _strict(strict)
+    _initialized(false)
 {
     if (!_initialized)
         init();
@@ -71,17 +70,22 @@ bool OidentdConfigGenerator::init()
 
 
 QString OidentdConfigGenerator::sysIdentForIdentity(const CoreIdentity *identity) const {
-    if (!_strict) {
-        return identity->ident();
-    }
+    // Make sure the identity's ident complies with strict mode if enabled
     const CoreNetwork *network = qobject_cast<CoreNetwork *>(sender());
-    return network->coreSession()->strictSysident();
+    return network->coreSession()->strictCompliantIdent(identity);
 }
 
 
-bool OidentdConfigGenerator::addSocket(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort)
+bool OidentdConfigGenerator::addSocket(const CoreIdentity *identity,
+                                       const QHostAddress &localAddress, quint16 localPort,
+                                       const QHostAddress &peerAddress, quint16 peerPort,
+                                       qint64 socketId)
 {
-    Q_UNUSED(localAddress) Q_UNUSED(peerAddress) Q_UNUSED(peerPort)
+    Q_UNUSED(localAddress)
+    Q_UNUSED(peerAddress)
+    Q_UNUSED(peerPort)
+    Q_UNUSED(socketId)
+
     const QString ident = sysIdentForIdentity(identity);
 
     _quasselConfig.append(_quasselStanzaTemplate.arg(localPort).arg(ident).arg(_configTag).toLatin1());
@@ -93,9 +97,18 @@ bool OidentdConfigGenerator::addSocket(const CoreIdentity *identity, const QHost
 
 
 //! not yet implemented
-bool OidentdConfigGenerator::removeSocket(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort)
+bool OidentdConfigGenerator::removeSocket(const CoreIdentity *identity,
+                                          const QHostAddress &localAddress, quint16 localPort,
+                                          const QHostAddress &peerAddress, quint16 peerPort,
+                                          qint64 socketId)
 {
-    Q_UNUSED(identity) Q_UNUSED(localAddress) Q_UNUSED(localPort) Q_UNUSED(peerAddress) Q_UNUSED(peerPort)
+    Q_UNUSED(identity)
+    Q_UNUSED(localAddress)
+    Q_UNUSED(localPort)
+    Q_UNUSED(peerAddress)
+    Q_UNUSED(peerPort)
+    Q_UNUSED(socketId)
+
     return true;
 }
 

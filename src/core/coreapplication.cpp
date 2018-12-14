@@ -20,84 +20,30 @@
 
 #include "coreapplication.h"
 
-#include "core.h"
-#include "logger.h"
-
-CoreApplicationInternal::CoreApplicationInternal()
-    : _coreCreated(false)
-{
-}
-
-
-CoreApplicationInternal::~CoreApplicationInternal()
-{
-    if (_coreCreated) {
-        Core::saveState();
-        Core::destroy();
-    }
-}
-
-
-bool CoreApplicationInternal::init()
-{
-    /* FIXME
-    This is an initial check if logfile is writable since the warning would spam stdout if done
-    in current Logger implementation. Can be dropped whenever the logfile is only opened once.
-    */
-    QFile logFile;
-    if (!Quassel::optionValue("logfile").isEmpty()) {
-        logFile.setFileName(Quassel::optionValue("logfile"));
-        if (!logFile.open(QIODevice::Append | QIODevice::Text))
-            qWarning("Warning: Couldn't open logfile '%s' - will log to stdout instead", qPrintable(logFile.fileName()));
-        else logFile.close();
-    }
-
-    Core::instance(); // create and init the core
-    _coreCreated = true;
-
-    Quassel::registerReloadHandler([]() {
-        // Currently, only reloading SSL certificates and the sysident cache is supported
-        Core::cacheSysIdent();
-        return Core::reloadCerts();
-    });
-
-    if (!Quassel::isOptionSet("norestore"))
-        Core::restoreState();
-
-    return true;
-}
-
-
-/*****************************************************************************/
-
 CoreApplication::CoreApplication(int &argc, char **argv)
     : QCoreApplication(argc, argv)
 {
-#ifdef Q_OS_MAC
-    Quassel::disableCrashHandler();
-#endif /* Q_OS_MAC */
-
     Quassel::setRunMode(Quassel::CoreOnly);
-    _internal = new CoreApplicationInternal();
+    Quassel::registerQuitHandler([this]() {
+        connect(_core.get(), SIGNAL(shutdownComplete()), this, SLOT(onShutdownComplete()));
+        _core->shutdown();
+    });
 }
 
 
-CoreApplication::~CoreApplication()
+void CoreApplication::init()
 {
-    delete _internal;
-    Quassel::destroy();
-}
-
-
-bool CoreApplication::init()
-{
-    if (Quassel::init() && _internal->init()) {
-#if QT_VERSION < 0x050000
-        qInstallMsgHandler(Logger::logMessage);
-#else
-        qInstallMessageHandler(Logger::logMessage);
-#endif
-        return true;
+    if (!Quassel::init()) {
+        throw ExitException{EXIT_FAILURE, tr("Could not initialize Quassel!")};
     }
-    return false;
+
+    _core.reset(new Core{}); // FIXME C++14: std::make_unique
+    _core->init();
+}
+
+
+void CoreApplication::onShutdownComplete()
+{
+    connect(_core.get(), SIGNAL(destroyed()), QCoreApplication::instance(), SLOT(quit()));
+    _core.release()->deleteLater();
 }

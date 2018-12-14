@@ -293,6 +293,8 @@ std::pair<UiStyle::FormatType, UiStyle::MessageLabel> QssParser::parseFormatType
                     label |= MessageLabel::Highlight;
                 else if (condValue == "selected")
                     label |= MessageLabel::Selected;
+                else if (condValue == "hovered")
+                    label |= MessageLabel::Hovered;
                 else {
                     qWarning() << Q_FUNC_INFO << tr("Invalid message label: %1").arg(condValue);
                     return invalid;
@@ -721,16 +723,22 @@ void QssParser::parseFont(const QString &value, QTextCharFormat *format)
         return;
     }
     format->setFontItalic(false);
+    format->setFontUnderline(false);
+    format->setFontStrikeOut(false);
     format->setFontWeight(QFont::Normal);
     QStringList proplist = rx.cap(1).split(' ', QString::SkipEmptyParts);
     foreach(QString prop, proplist) {
-        if (prop == "italic")
+        if (prop == "normal")
+            ; // pass
+        else if (prop == "italic")
             format->setFontItalic(true);
         else if (prop == "underline")
             format->setFontUnderline(true);
-        // Oblique is not a property supported by QTextCharFormat
-        //else if(prop == "oblique")
-        //  format->setStyle(QFont::StyleOblique);
+        else if (prop == "strikethrough")
+            format->setFontStrikeOut(true);
+        else if(prop == "oblique")
+            // Oblique is not a property supported by QTextCharFormat
+            format->setFontItalic(true);
         else if (prop == "bold")
             format->setFontWeight(QFont::Bold);
         else { // number
@@ -758,9 +766,9 @@ void QssParser::parseFontStyle(const QString &value, QTextCharFormat *format)
         format->setFontUnderline(true);
     else if (value == "strikethrough")
         format->setFontStrikeOut(true);
-    // Oblique is not a property supported by QTextCharFormat
-    //else if(value == "oblique")
-    //  format->setStyle(QFont::StyleOblique);
+    else if(value == "oblique")
+        // Oblique is not a property supported by QTextCharFormat
+        format->setFontItalic(true);
     else {
         qWarning() << Q_FUNC_INFO << tr("Invalid font style specification: %1").arg(value);
     }

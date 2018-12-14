@@ -18,17 +18,17 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include "coreconfigwizard.h"
+
 #include <QDebug>
 #include <QAbstractButton>
 #include <QCoreApplication>
 #include <QFormLayout>
-#include <QIcon>
 #include <QSpinBox>
 
-#include "coreconfigwizard.h"
-#include "coreconnection.h"
-
 #include "client.h"
+#include "coreconnection.h"
+#include "icon.h"
 
 namespace {
 
@@ -54,10 +54,11 @@ QGroupBox *createFieldBox(const QString &title, const std::vector<FieldInfo> &fi
     // provide specialized config widgets for those (which may be a good idea anyway, e.g. if we
     // think about client-side translations...)
 
-    QGroupBox *fieldBox = new QGroupBox;
+    auto *fieldBox = new QGroupBox;
     fieldBox->setTitle(title);
+    auto *formLayout = new QFormLayout;
+    fieldBox->setLayout(formLayout);
 
-    QFormLayout *formLayout = new QFormLayout(fieldBox);
     for (auto &&fieldInfo : fieldInfos) {
         QWidget *widget {nullptr};
         switch (std::get<2>(fieldInfo).type()) {
@@ -159,7 +160,7 @@ CoreConfigWizard::CoreConfigWizard(CoreConnection *connection, const QVariantLis
     setModal(true);
 
     setWindowTitle(CoreConfigWizard::tr("Core Configuration Wizard"));
-    setPixmap(QWizard::LogoPixmap, QIcon::fromTheme("quassel", QIcon(":/icons/quassel.png")).pixmap(48));
+    setPixmap(QWizard::LogoPixmap, icon::get("quassel").pixmap(48));
 
     connect(connection, SIGNAL(coreSetupSuccess()), SLOT(coreSetupSuccess()));
     connect(connection, SIGNAL(coreSetupFailed(QString)), SLOT(coreSetupFailed(QString)));

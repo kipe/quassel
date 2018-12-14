@@ -50,7 +50,7 @@ class IrcUser : public SyncableObject
     Q_PROPERTY(QDateTime loginTime READ loginTime WRITE setLoginTime)
     Q_PROPERTY(QString server READ server WRITE setServer)
     Q_PROPERTY(QString ircOperator READ ircOperator WRITE setIrcOperator)
-    Q_PROPERTY(int lastAwayMessage READ lastAwayMessage WRITE setLastAwayMessage)
+    Q_PROPERTY(QDateTime lastAwayMessageTime READ lastAwayMessageTime WRITE setLastAwayMessageTime)
     Q_PROPERTY(QString whoisServiceReply READ whoisServiceReply WRITE setWhoisServiceReply)
     Q_PROPERTY(QString suserHost READ suserHost WRITE setSuserHost)
     Q_PROPERTY(bool encrypted READ encrypted WRITE setEncrypted)
@@ -79,7 +79,7 @@ public :
     inline QDateTime loginTime() const { return _loginTime; }
     inline QString server() const { return _server; }
     inline QString ircOperator() const { return _ircOperator; }
-    inline int lastAwayMessage() const { return _lastAwayMessage; }
+    inline QDateTime lastAwayMessageTime() const { return _lastAwayMessageTime; }
     inline QString whoisServiceReply() const { return _whoisServiceReply; }
     inline QString suserHost() const { return _suserHost; }
     inline bool encrypted() const { return _encrypted; }
@@ -106,6 +106,31 @@ public :
     inline QDateTime lastSpokenTo(BufferId id) const { return _lastSpokenTo.value(id); }
     void setLastSpokenTo(BufferId id, const QDateTime &time);
 
+    /**
+     * Gets whether or not the away state has changed since it was last acknowledged
+     *
+     * Away state is marked as changed by any modification to away status (away/here, message)
+     *
+     * NOTE: On servers lacking support for IRCv3 away-notify, this won't update until an autoWHO-
+     * run for away/here changes, or until sending a message to the user for away message changes.
+     *
+     * @see IrcUser::acknowledgeAwayChanged()
+     *
+     * @return True if current away state is unchanged from last acknowledgement, otherwise false
+     */
+    inline bool hasAwayChanged() const { return _awayChanged; }
+
+    /**
+     * Sets the last away state change as acknowledged
+     *
+     * @see IrcUser::hasAwayChanged()
+     */
+    inline void acknowledgeAwayChanged()
+    {
+        // Don't sync this as individual clients may suppress different kinds of behaviors
+        _awayChanged = false;
+    }
+
 public slots:
     void setUser(const QString &user);
     void setHost(const QString &host);
@@ -117,13 +142,16 @@ public slots:
      * @param[in] account Account name if logged in, * if logged out, or empty string if unknown
      */
     void setAccount(const QString &account);
-    void setAway(const bool &away);
+    void setAway(bool away);
     void setAwayMessage(const QString &awayMessage);
     void setIdleTime(const QDateTime &idleTime);
     void setLoginTime(const QDateTime &loginTime);
     void setServer(const QString &server);
     void setIrcOperator(const QString &ircOperator);
-    void setLastAwayMessage(const int &lastAwayMessage);
+    // setLastAwayMessage is only called by legacy (pre-0.13) cores, which automatically gets
+    // converted to setting the appropriate lastAwayMessageTime.  Do not use this in new code.
+    void setLastAwayMessage(int lastAwayMessage);
+    void setLastAwayMessageTime(const QDateTime &lastAwayMessageTime);
     void setWhoisServiceReply(const QString &whoisServiceReply);
     void setSuserHost(const QString &suserHost);
     void setEncrypted(bool encrypted);
@@ -156,7 +184,7 @@ signals:
 //   void loginTimeSet(QDateTime loginTime);
 //   void serverSet(QString server);
 //   void ircOperatorSet(QString ircOperator);
-//   void lastAwayMessageSet(int lastAwayMessage);
+//   void lastAwayMessageTimeSet(QDateTime lastAwayMessageTime);
 //   void whoisServiceReplySet(QString whoisServiceReply);
 //   void suserHostSet(QString suserHost);
     void encryptedSet(bool encrypted);
@@ -188,6 +216,15 @@ private:
         return (_nick.toLower() == nickname.toLower());
     }
 
+    /**
+     * Sets the last away state change as unacknowledged
+     *
+     * @see IrcUser::hasAwayChanged()
+     */
+    inline void markAwayChanged()
+    {
+        _awayChanged = true;
+    }
 
     bool _initialized;
 
@@ -203,7 +240,7 @@ private:
     QDateTime _idleTimeSet;
     QDateTime _loginTime;
     QString _ircOperator;
-    int _lastAwayMessage;
+    QDateTime _lastAwayMessageTime;
     QString _whoisServiceReply;
     QString _suserHost;
     bool _encrypted;
@@ -219,6 +256,10 @@ private:
 
     QHash<BufferId, QDateTime> _lastActivity;
     QHash<BufferId, QDateTime> _lastSpokenTo;
+
+    // Given it's never been acknowledged, assume changes exist on IrcUser creation
+    /// Tracks if changes in away state (away/here, message) have yet to be acknowledged
+    bool _awayChanged = true;
 };
 
 

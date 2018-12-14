@@ -280,3 +280,102 @@ QString formatCurrentDateTimeInString(const QString &formatStr)
 
     return formattedStr;
 }
+
+
+QString tryFormatUnixEpoch(const QString &possibleEpochDate, Qt::DateFormat dateFormat, bool useUTC)
+{
+    // Does the string resemble a Unix epoch?  Parse as 64-bit time
+    qint64 secsSinceEpoch = possibleEpochDate.toLongLong();
+    if (secsSinceEpoch == 0) {
+        // Parsing either failed, or '0' was sent.  No need to distinguish; either way, it's not
+        // useful as epoch.
+        // See https://doc.qt.io/qt-5/qstring.html#toLongLong
+        return possibleEpochDate;
+    }
+
+    // Time checks out, parse it
+    QDateTime date;
+#if QT_VERSION >= 0x050800
+    date.setSecsSinceEpoch(secsSinceEpoch);
+#else
+    // toSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for now.
+    // See https://doc.qt.io/qt-5/qdatetime.html#toMSecsSinceEpoch
+    date.setMSecsSinceEpoch(secsSinceEpoch * 1000);
+#endif
+
+    // Return the localized date/time
+    if (useUTC) {
+        // Return UTC time
+        if (dateFormat == Qt::DateFormat::ISODate) {
+            // Replace the "T" date/time separator with " " for readability.  This isn't quite the
+            // ISO 8601 spec (it specifies omitting the "T" entirely), but RFC 3339 allows this.
+            // Go with RFC 3339 for human readability that's still machine-parseable, too.
+            //
+            // Before: 2018-06-21T21:35:52Z
+            // After:  2018-06-21 21:35:52Z
+            //         ..........^ (10th character)
+            //
+            // See https://en.wikipedia.org/wiki/ISO_8601#cite_note-32
+            // And https://www.ietf.org/rfc/rfc3339.txt
+            return date.toUTC().toString(dateFormat).replace(10, 1, " ");
+        } else {
+            return date.toUTC().toString(dateFormat);
+        }
+    } else if (dateFormat == Qt::DateFormat::ISODate) {
+        // Add in ISO local timezone information via special handling below
+        // formatDateTimeToOffsetISO() handles converting "T" to " "
+        return formatDateTimeToOffsetISO(date);
+    } else {
+        // Return local time
+        return date.toString(dateFormat);
+    }
+}
+
+
+QString formatDateTimeToOffsetISO(const QDateTime &dateTime)
+{
+    if (!dateTime.isValid()) {
+        // Don't try to do anything with invalid date/time
+        return "formatDateTimeToISO() invalid date/time";
+    }
+
+    // Replace the "T" date/time separator with " " for readability.  This isn't quite the ISO 8601
+    // spec (it specifies omitting the "T" entirely), but RFC 3339 allows this.  Go with RFC 3339
+    // for human readability that's still machine-parseable, too.
+    //
+    // Before: 2018-08-22T18:43:10-05:00
+    // After:  2018-08-22 18:43:10-05:00
+    //         ..........^ (10th character)
+    //
+    // See https://en.wikipedia.org/wiki/ISO_8601#cite_note-32
+    // And https://www.ietf.org/rfc/rfc3339.txt
+
+#if 0
+    // The expected way to get a UTC offset on ISO 8601 dates
+    // Remove the "T" date/time separator
+    return dateTime.toTimeSpec(Qt::OffsetFromUTC).toString(Qt::ISODate).replace(10, 1, " ");
+#else
+    // Work around Qt bug that converts to UTC instead of including timezone information
+    // See https://bugreports.qt.io/browse/QTBUG-26161
+    //
+    // NOTE: Despite the bug report marking as fixed in Qt 5.2.0 (QT_VERSION >= 0x050200), this
+    // still appears broken in Qt 5.5.1.
+    //
+    // Credit to "user362638" for the solution below, modified to fit Quassel's needs
+    // https://stackoverflow.com/questions/18750569/qdatetime-isodate-with-timezone
+
+    // Get the local and UTC time
+    QDateTime local = QDateTime(dateTime);
+    QDateTime utc = local.toUTC();
+    utc.setTimeSpec(Qt::LocalTime);
+
+    // Find the UTC offset
+    int utcOffset = utc.secsTo(local);
+
+    // Force the local time to follow this offset
+    local.setUtcOffset(utcOffset);
+    // Now the output should be correct
+    // Remove the "T" date/time separator
+    return local.toString(Qt::ISODate).replace(10, 1, " ");
+#endif
+}

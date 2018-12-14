@@ -204,6 +204,41 @@ public :
     }
     /**@}*/
 
+    /**
+     * Sorts the user channelmodes according to priority set by PREFIX
+     *
+     * Given a list of channel modes, sorts according to the order of PREFIX, putting the highest
+     * modes first.  Any unknown modes are moved to the end in no given order.
+     *
+     * If prefix modes cannot be determined from the network, no changes will be made.
+     *
+     * @param modes User channelmodes
+     * @return Priority-sorted user channelmodes
+     */
+    QString sortPrefixModes(const QString &modes) const;
+
+    /**@{*/
+    /**
+     * Sorts the list of users' channelmodes according to priority set by PREFIX
+     *
+     * Maintains order of the modes list.
+     *
+     * @seealso Network::sortPrefixModes()
+     *
+     * @param modesList List of users' channel modes
+     * @return Priority-sorted list of users' channel modes
+     */
+    inline QStringList sortPrefixModes(const QStringList &modesList) const {
+        QStringList sortedModesList;
+        // Sort each individual mode string, appending back
+        // Must maintain the order received!
+        for (QString modes : modesList) {
+            sortedModesList << sortPrefixModes(modes);
+        }
+        return sortedModesList;
+    }
+    /**@}*/
+
     ChannelModeType channelModeType(const QString &mode);
     inline ChannelModeType channelModeType(const QCharRef &mode) { return channelModeType(QString(mode)); }
 
@@ -723,44 +758,42 @@ private:
 
 
 //! Stores all editable information about a network (as opposed to runtime state).
-struct NetworkInfo {
-    // set some default values, note that this does not initialize e.g. name and id
-    NetworkInfo();
-
-    NetworkId networkId;
+struct NetworkInfo
+{
     QString networkName;
-    IdentityId identity;
 
-    bool useCustomEncodings; // not used!
+    Network::ServerList serverList;
+    QStringList perform;
+
+    QString autoIdentifyService{"NickServ"};
+    QString autoIdentifyPassword;
+
+    QString saslAccount;
+    QString saslPassword;
+
     QByteArray codecForServer;
     QByteArray codecForEncoding;
     QByteArray codecForDecoding;
 
-    Network::ServerList serverList;
-    bool useRandomServer;
+    NetworkId networkId {0};
+    IdentityId identity {1};
 
-    QStringList perform;
+    quint32 messageRateBurstSize {5};     ///< Maximum number of messages to send without any delays
+    quint32 messageRateDelay     {2200};  ///< Delay in ms. for messages when max. burst messages sent
 
-    bool useAutoIdentify;
-    QString autoIdentifyService;
-    QString autoIdentifyPassword;
+    quint32 autoReconnectInterval {60};
+    quint16 autoReconnectRetries  {20};
 
-    bool useSasl;
-    QString saslAccount;
-    QString saslPassword;
+    bool rejoinChannels            {true};
+    bool useRandomServer           {false};
+    bool useAutoIdentify           {false};
+    bool useSasl                   {false};
+    bool useAutoReconnect          {true};
+    bool unlimitedReconnectRetries {false};
+    bool useCustomMessageRate      {false};  ///< If true, use custom rate limits, otherwise use defaults
+    bool unlimitedMessageRate      {false};  ///< If true, disable rate limiting, otherwise apply limits
 
-    bool useAutoReconnect;
-    quint32 autoReconnectInterval;
-    quint16 autoReconnectRetries;
-    bool unlimitedReconnectRetries;
-    bool rejoinChannels;
-
-    // Custom rate limiting
-    bool useCustomMessageRate;         /// If true, use custom rate limits, otherwise use defaults
-    quint32 messageRateBurstSize;      /// Maximum number of messages to send without any delays
-    quint32 messageRateDelay;          /// Delay in ms. for messages when max. burst messages sent
-    bool unlimitedMessageRate;         /// If true, disable rate limiting, otherwise apply limits
-
+public:
     bool operator==(const NetworkInfo &other) const;
     bool operator!=(const NetworkInfo &other) const;
 };

@@ -18,9 +18,10 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#include <QHostInfo>
-
 #include "corenetwork.h"
+
+#include <QDebug>
+#include <QHostInfo>
 
 #include "core.h"
 #include "coreidentity.h"
@@ -44,11 +45,12 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     _previousConnectionAttemptFailed(false),
     _lastUsedServerIndex(0),
 
-    _lastPingTime(0),
-    _pingCount(0),
-    _sendPings(false),
     _requestedUserModes('-')
 {
+    // Check if raw IRC logging is enabled
+    _debugLogRawIrc = (Quassel::isOptionSet("debug-irc") || Quassel::isOptionSet("debug-irc-id"));
+    _debugLogRawNetId = Quassel::optionValue("debug-irc-id").toInt();
+
     _autoReconnectTimer.setSingleShot(true);
     connect(&_socketCloseTimer, SIGNAL(timeout()), this, SLOT(socketCloseTimeout()));
 
@@ -61,6 +63,11 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     QHash<QString, QString> channels = coreSession()->persistentChannels(networkId());
     foreach(QString chan, channels.keys()) {
         _channelKeys[chan.toLower()] = channels[chan];
+    }
+
+    QHash<QString, QByteArray> bufferCiphers = coreSession()->bufferCiphers(networkId());
+    foreach(QString buffer, bufferCiphers.keys()) {
+        storeChannelCipherKey(buffer.toLower(), bufferCiphers[buffer]);
     }
 
     connect(networkConfig(), SIGNAL(pingTimeoutEnabledSet(bool)), SLOT(enablePingTimeout(bool)));
@@ -98,31 +105,29 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     connect(this, SIGNAL(capRemoved(QString)), this, SLOT(serverCapRemoved(QString)));
 
     if (Quassel::isOptionSet("oidentd")) {
-        connect(this, SIGNAL(socketInitialized(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Core::instance()->oidentdConfigGenerator(), SLOT(addSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Qt::BlockingQueuedConnection);
-        connect(this, SIGNAL(socketDisconnected(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Core::instance()->oidentdConfigGenerator(), SLOT(removeSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)));
+        connect(this, SIGNAL(socketInitialized(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)),
+                Core::instance()->oidentdConfigGenerator(), SLOT(addSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)), Qt::BlockingQueuedConnection);
+        connect(this, SIGNAL(socketDisconnected(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)),
+                Core::instance()->oidentdConfigGenerator(), SLOT(removeSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)));
+    }
+
+    if (Quassel::isOptionSet("ident-daemon")) {
+        connect(this, SIGNAL(socketInitialized(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)),
+                Core::instance()->identServer(), SLOT(addSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)), Qt::BlockingQueuedConnection);
+        connect(this, SIGNAL(socketDisconnected(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)),
+                Core::instance()->identServer(), SLOT(removeSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16, qint64)));
     }
 }
 
 
 CoreNetwork::~CoreNetwork()
 {
-    // Request a proper disconnect, but don't count as user-requested disconnect
-    if (socketConnected()) {
-        // Only try if the socket's fully connected (not initializing or disconnecting).
-        // Force an immediate disconnect, jumping the command queue.  Ensures the proper QUIT is
-        // shown even if other messages are queued.
-        disconnectFromIrc(false, QString(), false, true);
-        // Process the putCmd events that trigger the quit.  Without this, shutting down the core
-        // results in abrubtly closing the socket rather than sending the QUIT as expected.
-        QCoreApplication::processEvents();
-        // Wait briefly for each network to disconnect.  Sometimes it takes a little while to send.
-        if (!forceDisconnect()) {
-            qWarning() << "Timed out quitting network" << networkName() <<
-                          "(user ID " << userId() << ")";
-        }
+    // Ensure we don't get any more signals from the socket while shutting down
+    disconnect(&socket, nullptr, this, nullptr);
+    if (!forceDisconnect()) {
+        qWarning() << QString{"Could not disconnect from network %1 (network ID: %2, user ID: %3)"}
+                      .arg(networkName()).arg(networkId().toInt()).arg(userId().toInt());
     }
-    disconnect(&socket, 0, this, 0); // this keeps the socket from triggering events during clean up
-    delete _userInputHandler;
 }
 
 
@@ -134,8 +139,10 @@ bool CoreNetwork::forceDisconnect(int msecs)
     }
     // Request a socket-level disconnect if not already happened
     socket.disconnectFromHost();
-    // Return the result of waiting for disconnect; true if successful, otherwise false
-    return socket.waitForDisconnected(msecs);
+    if (socket.state() != QAbstractSocket::UnconnectedState) {
+        return socket.waitForDisconnected(msecs);
+    }
+    return true;
 }
 
 
@@ -181,6 +188,14 @@ QByteArray CoreNetwork::userEncode(const QString &userNick, const QString &strin
 
 void CoreNetwork::connectToIrc(bool reconnecting)
 {
+    if (_shuttingDown) {
+        return;
+    }
+
+    if (Core::instance()->identServer()) {
+        _socketId = Core::instance()->identServer()->addWaitingSocket();
+    }
+
     if (!reconnecting && useAutoReconnect() && _autoReconnectCount == 0) {
         _autoReconnectTimer.setInterval(autoReconnectInterval() * 1000);
         if (unlimitedReconnectRetries())
@@ -239,6 +254,9 @@ void CoreNetwork::connectToIrc(bool reconnecting)
 
     enablePingTimeout();
 
+    // Reset tracking for valid timestamps in PONG replies
+    setPongTimestampValid(false);
+
     // Qt caches DNS entries for a minute, resulting in round-robin (e.g. for chat.freenode.net) not working if several users
     // connect at a similar time. QHostInfo::fromName(), however, always performs a fresh lookup, overwriting the cache entry.
     if (! server.useProxy) {
@@ -264,8 +282,7 @@ void CoreNetwork::connectToIrc(bool reconnecting)
 }
 
 
-void CoreNetwork::disconnectFromIrc(bool requested, const QString &reason, bool withReconnect,
-                                    bool forceImmediate)
+void CoreNetwork::disconnectFromIrc(bool requested, const QString &reason, bool withReconnect)
 {
     // Disconnecting from the network, should expect a socket close or error
     _disconnectExpected = true;
@@ -293,17 +310,35 @@ void CoreNetwork::disconnectFromIrc(bool requested, const QString &reason, bool 
     displayMsg(Message::Server, BufferInfo::StatusBuffer, "", tr("Disconnecting. (%1)").arg((!requested && !withReconnect) ? tr("Core Shutdown") : _quitReason));
     if (socket.state() == QAbstractSocket::UnconnectedState) {
         socketDisconnected();
-    } else {
+    }
+    else {
         if (socket.state() == QAbstractSocket::ConnectedState) {
-            userInputHandler()->issueQuit(_quitReason, forceImmediate);
-        } else {
+            // If shutting down, prioritize the QUIT command
+            userInputHandler()->issueQuit(_quitReason, _shuttingDown);
+        }
+        else {
             socket.close();
         }
-        if (requested || withReconnect) {
-            // the irc server has 10 seconds to close the socket
+        if (socket.state() != QAbstractSocket::UnconnectedState) {
+            // Wait for up to 10 seconds for the socket to close cleanly, then it will be forcefully aborted
             _socketCloseTimer.start(10000);
         }
     }
+}
+
+
+void CoreNetwork::socketCloseTimeout()
+{
+    qWarning() << QString{"Timed out quitting network %1 (network ID: %2, user ID: %3)"}
+                  .arg(networkName()).arg(networkId().toInt()).arg(userId().toInt());
+    socket.abort();
+}
+
+
+void CoreNetwork::shutdown()
+{
+    _shuttingDown = true;
+    disconnectFromIrc(false, {}, false);
 }
 
 
@@ -442,6 +477,7 @@ void CoreNetwork::setCipherKey(const QString &target, const QByteArray &key)
     CoreIrcChannel *c = qobject_cast<CoreIrcChannel*>(ircChannel(target));
     if (c) {
         c->setEncrypted(c->cipher()->setKey(key));
+        coreSession()->setBufferCipher(networkId(), target, key);
         return;
     }
 
@@ -451,6 +487,7 @@ void CoreNetwork::setCipherKey(const QString &target, const QByteArray &key)
 
     if (u) {
         u->setEncrypted(u->cipher()->setKey(key));
+        coreSession()->setBufferCipher(networkId(), target, key);
         return;
     }
 }
@@ -469,13 +506,13 @@ bool CoreNetwork::cipherUsesCBC(const QString &target)
 }
 #endif /* HAVE_QCA2 */
 
-bool CoreNetwork::setAutoWhoDone(const QString &channel)
+bool CoreNetwork::setAutoWhoDone(const QString &name)
 {
-    QString chan = channel.toLower();
-    if (_autoWhoPending.value(chan, 0) <= 0)
+    QString chanOrNick = name.toLower();
+    if (_autoWhoPending.value(chanOrNick, 0) <= 0)
         return false;
-    if (--_autoWhoPending[chan] <= 0)
-        _autoWhoPending.remove(chan);
+    if (--_autoWhoPending[chanOrNick] <= 0)
+        _autoWhoPending.remove(chanOrNick);
     return true;
 }
 
@@ -536,7 +573,7 @@ void CoreNetwork::socketInitialized()
     // Non-SSL connections enter here only once, always emit socketInitialized(...) in these cases
     // SSL connections call socketInitialized() twice, only emit socketInitialized(...) on the first (not yet encrypted) run
     if (!server.useSsl || !socket.isEncrypted()) {
-        emit socketInitialized(identity, localAddress(), localPort(), peerAddress(), peerPort());
+        emit socketInitialized(identity, localAddress(), localPort(), peerAddress(), peerPort(), _socketId);
     }
 
     if (server.useSsl && !socket.isEncrypted()) {
@@ -544,7 +581,7 @@ void CoreNetwork::socketInitialized()
         return;
     }
 #else
-    emit socketInitialized(identity, localAddress(), localPort(), peerAddress(), peerPort());
+    emit socketInitialized(identity, localAddress(), localPort(), peerAddress(), peerPort(), _socketId);
 #endif
 
     socket.setSocketOption(QAbstractSocket::KeepAliveOption, true);
@@ -576,7 +613,10 @@ void CoreNetwork::socketInitialized()
         nick = identity->nicks()[0];
     }
     putRawLine(serverEncode(QString("NICK %1").arg(nick)));
-    putRawLine(serverEncode(QString("USER %1 8 * :%2").arg(identity->ident(), identity->realName())));
+    // Only allow strict-compliant idents when strict mode is enabled
+    putRawLine(serverEncode(QString("USER %1 8 * :%2").arg(
+                                coreSession()->strictCompliantIdent(identity),
+                                identity->realName())));
 }
 
 
@@ -602,7 +642,7 @@ void CoreNetwork::socketDisconnected()
 
     setConnected(false);
     emit disconnected(networkId());
-    emit socketDisconnected(identityPtr(), localAddress(), localPort(), peerAddress(), peerPort());
+    emit socketDisconnected(identityPtr(), localAddress(), localPort(), peerAddress(), peerPort(), _socketId);
     // Reset disconnect expectations
     _disconnectExpected = false;
     if (_quitRequested) {
@@ -901,12 +941,17 @@ void CoreNetwork::doAutoReconnect()
 
 void CoreNetwork::sendPing()
 {
-    uint now = QDateTime::currentDateTime().toTime_t();
+    qint64 now = QDateTime::currentDateTime().toMSecsSinceEpoch();
     if (_pingCount != 0) {
         qDebug() << "UserId:" << userId() << "Network:" << networkName() << "missed" << _pingCount << "pings."
                  << "BA:" << socket.bytesAvailable() << "BTW:" << socket.bytesToWrite();
     }
-    if ((int)_pingCount >= networkConfig()->maxPingCount() && now - _lastPingTime <= (uint)(_pingTimer.interval() / 1000) + 1) {
+    if ((int)_pingCount >= networkConfig()->maxPingCount()
+            && (now - _lastPingTime) <= (_pingTimer.interval() + (1 * 1000))) {
+        // In transitioning to 64-bit time, the interval no longer needs converted down to seconds.
+        // However, to reduce the risk of breaking things by changing past behavior, we still allow
+        // up to 1 second missed instead of enforcing a stricter 1 millisecond allowance.
+        //
         // the second check compares the actual elapsed time since the last ping and the pingTimer interval
         // if the interval is shorter then the actual elapsed time it means that this thread was somehow blocked
         // and unable to even handle a ping answer. So we ignore those misses.
@@ -916,8 +961,12 @@ void CoreNetwork::sendPing()
         _lastPingTime = now;
         _pingCount++;
         // Don't send pings until the network is initialized
-        if(_sendPings)
+        if(_sendPings) {
+            // Mark as waiting for a reply
+            _pongReplyPending = true;
+            // Send default timestamp ping
             userInputHandler()->handlePing(BufferInfo(), QString());
+        }
     }
 }
 
@@ -928,6 +977,7 @@ void CoreNetwork::enablePingTimeout(bool enable)
         disablePingTimeout();
     else {
         resetPingTimeout();
+        resetPongReplyPending();
         if (networkConfig()->pingTimeoutEnabled())
             _pingTimer.start();
     }
@@ -939,12 +989,19 @@ void CoreNetwork::disablePingTimeout()
     _pingTimer.stop();
     _sendPings = false;
     resetPingTimeout();
+    resetPongReplyPending();
 }
 
 
 void CoreNetwork::setPingInterval(int interval)
 {
     _pingTimer.setInterval(interval * 1000);
+}
+
+
+void CoreNetwork::setPongTimestampValid(bool validTimestamp)
+{
+    _pongTimestampValid = validTimestamp;
 }
 
 
@@ -1263,12 +1320,12 @@ void CoreNetwork::startAutoWhoCycle()
     _autoWhoQueue = channels();
 }
 
-void CoreNetwork::queueAutoWhoOneshot(const QString &channelOrNick)
+void CoreNetwork::queueAutoWhoOneshot(const QString &name)
 {
     // Prepend so these new channels/nicks are the first to be checked
     // Don't allow duplicates
-    if (!_autoWhoQueue.contains(channelOrNick.toLower())) {
-        _autoWhoQueue.prepend(channelOrNick.toLower());
+    if (!_autoWhoQueue.contains(name.toLower())) {
+        _autoWhoQueue.prepend(name.toLower());
     }
     if (capEnabled(IrcCap::AWAY_NOTIFY)) {
         // When away-notify is active, the timer's stopped.  Start a new cycle to who this channel.
@@ -1330,11 +1387,23 @@ void CoreNetwork::sendAutoWho()
         }
         if (supports("WHOX")) {
             // Use WHO extended to poll away users and/or user accounts
+            // Explicitly only match on nickname ("n"), don't rely on server defaults
+            //
+            // WHO <nickname> n%chtsunfra,<unique_number>
+            //
             // See http://faerion.sourceforge.net/doc/irc/whox.var
-            // And https://github.com/hexchat/hexchat/blob/c874a9525c9b66f1d5ddcf6c4107d046eba7e2c5/src/common/proto-irc.c#L750
-            putRawLine(serverEncode(QString("WHO %1 %%chtsunfra,%2")
-                                    .arg(serverEncode(chanOrNick), QString::number(IrcCap::ACCOUNT_NOTIFY_WHOX_NUM))));
+            // And https://github.com/quakenet/snircd/blob/master/doc/readme.who
+            // And https://github.com/hexchat/hexchat/blob/57478b65758e6b697b1d82ce21075e74aa475efc/src/common/proto-irc.c#L752
+            putRawLine(serverEncode(QString("WHO %1 n%chtsunfra,%2")
+                                    .arg(serverEncode(chanOrNick),
+                                         QString::number(IrcCap::ACCOUNT_NOTIFY_WHOX_NUM))));
         } else {
+            // Fall back to normal WHO
+            //
+            // Note: According to RFC 1459, "WHO <phrase>" can fall back to searching realname,
+            // hostmask, etc.  There's nothing we can do about that :(
+            //
+            // See https://tools.ietf.org/html/rfc1459#section-4.5.1
             putRawLine(serverEncode(QString("WHO %1").arg(chanOrNick)));
         }
         break;
@@ -1420,6 +1489,12 @@ void CoreNetwork::fillBucketAndProcessQueue()
 
 void CoreNetwork::writeToSocket(const QByteArray &data)
 {
+    // Log the message if enabled and network ID matches or allows all
+    if (_debugLogRawIrc
+            && (_debugLogRawNetId == -1 || networkId().toInt() == _debugLogRawNetId)) {
+        // Include network ID
+        qDebug() << "IRC net" << networkId() << ">>" << data;
+    }
     socket.write(data);
     socket.write("\r\n");
     if (!_skipMessageRates) {
@@ -1443,6 +1518,9 @@ Network::Server CoreNetwork::usedServer() const
 
 void CoreNetwork::requestConnect() const
 {
+    if (_shuttingDown) {
+        return;
+    }
     if (connectionState() != Disconnected) {
         qWarning() << "Requesting connect while already being connected!";
         return;
@@ -1453,6 +1531,9 @@ void CoreNetwork::requestConnect() const
 
 void CoreNetwork::requestDisconnect() const
 {
+    if (_shuttingDown) {
+        return;
+    }
     if (connectionState() == Disconnected) {
         qWarning() << "Requesting disconnect while not being connected!";
         return;

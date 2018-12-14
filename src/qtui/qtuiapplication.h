@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include <memory>
+
 #ifdef HAVE_KDE4
 #  include <KApplication>
 #else
@@ -28,6 +30,7 @@
 
 #include <QSessionManager>
 
+#include "client.h"
 #include "quassel.h"
 #include "uisettings.h"
 #include "qtuisettings.h"
@@ -46,8 +49,8 @@ class QtUiApplication : public QApplication
 
 public:
     QtUiApplication(int &, char **);
-    ~QtUiApplication();
-    virtual bool init();
+
+    virtual void init();
 
     void resumeSessionIfPossible();
     inline bool isAboutToQuit() const { return _aboutToQuit; }
@@ -59,6 +62,9 @@ public:
     void commitData(QSessionManager &manager);
     void saveState(QSessionManager &manager);
 #endif
+
+protected:
+    virtual Quassel::QuitHandler quitHandler();
 
 private:
     /**
@@ -86,8 +92,9 @@ private:
 private slots:
     void initUi();
 
+protected:
+    std::unique_ptr<Client> _client;
+
 private:
     bool _aboutToQuit{false};
-
-    Quassel _quasselInstance;
 };

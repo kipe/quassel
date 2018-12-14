@@ -22,11 +22,11 @@
 
 #include <QHeaderView>
 #include <QHBoxLayout>
-#include <QIcon>
 #include <QSpacerItem>
 
 #include "client.h"
 #include "clientirclisthelper.h"
+#include "icon.h"
 
 ChannelListDlg::ChannelListDlg(QWidget *parent)
     : QDialog(parent),
@@ -41,7 +41,7 @@ ChannelListDlg::ChannelListDlg(QWidget *parent)
     _sortFilter.setFilterKeyColumn(-1);
 
     ui.setupUi(this);
-    ui.advancedModeLabel->setPixmap(QIcon::fromTheme("edit-rename").pixmap(22));
+    ui.advancedModeLabel->setPixmap(icon::get("edit-rename").pixmap(22));
 
     ui.channelListView->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui.channelListView->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -49,12 +49,14 @@ ChannelListDlg::ChannelListDlg(QWidget *parent)
     ui.channelListView->setTabKeyNavigation(false);
     ui.channelListView->setModel(&_sortFilter);
     ui.channelListView->setSortingEnabled(true);
+    // Sort A-Z by default
+    ui.channelListView->sortByColumn(0, Qt::AscendingOrder);
     ui.channelListView->verticalHeader()->hide();
     ui.channelListView->horizontalHeader()->setStretchLastSection(true);
 
     ui.searchChannelsButton->setAutoDefault(false);
 
-    setWindowIcon(QIcon::fromTheme("format-list-unordered"));
+    setWindowIcon(icon::get("format-list-unordered"));
 
     connect(ui.advancedModeLabel, SIGNAL(clicked()), this, SLOT(toggleMode()));
     connect(ui.searchChannelsButton, SIGNAL(clicked()), this, SLOT(requestSearch()));
@@ -70,6 +72,9 @@ ChannelListDlg::ChannelListDlg(QWidget *parent)
     enableQuery(true);
     showFilterLine(false);
     showErrors(false);
+
+    // Set initial input focus
+    updateInputFocus();
 }
 
 
@@ -84,8 +89,22 @@ void ChannelListDlg::setNetwork(NetworkId netId)
 }
 
 
+void ChannelListDlg::setChannelFilters(const QString &channelFilters)
+{
+    // Enable advanced mode if searching
+    setAdvancedMode(!channelFilters.isEmpty());
+    // Set channel search text after setting advanced mode so it's not cleared
+    ui.channelNameLineEdit->setText(channelFilters.trimmed());
+}
+
+
 void ChannelListDlg::requestSearch()
 {
+    if (!_netId.isValid()) {
+        // No valid network set yet
+        return;
+    }
+
     _listFinished = false;
     enableQuery(false);
     showErrors(false);
@@ -104,6 +123,8 @@ void ChannelListDlg::receiveChannelList(const NetworkId &netId, const QStringLis
     showFilterLine(!channelList.isEmpty());
     _ircListModel.setChannelList(channelList);
     enableQuery(_listFinished);
+    // Reset input focus since UI changed
+    updateInputFocus();
 }
 
 
@@ -132,19 +153,31 @@ void ChannelListDlg::setAdvancedMode(bool advanced)
             delete _simpleModeSpacer;
             _simpleModeSpacer = 0;
         }
-        ui.advancedModeLabel->setPixmap(QIcon::fromTheme("edit-clear-locationbar-rtl", QIcon::fromTheme("edit-clear")).pixmap(16));
+        ui.advancedModeLabel->setPixmap(icon::get("edit-clear-locationbar-rtl").pixmap(16));
     }
     else {
         if (!_simpleModeSpacer) {
             _simpleModeSpacer = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
             ui.searchLayout->insertSpacerItem(0, _simpleModeSpacer);
         }
-        ui.advancedModeLabel->setPixmap(QIcon::fromTheme("edit-rename").pixmap(16));
+        ui.advancedModeLabel->setPixmap(icon::get("edit-rename").pixmap(16));
     }
 
     ui.channelNameLineEdit->clear();
     ui.channelNameLineEdit->setVisible(advanced);
     ui.searchPatternLabel->setVisible(advanced);
+}
+
+
+void ChannelListDlg::updateInputFocus()
+{
+    // Update keyboard focus to match what options are available.  Prioritize the channel name
+    // editor as one likely won't need to filter when already limiting the list.
+    if (ui.channelNameLineEdit->isVisible()) {
+        ui.channelNameLineEdit->setFocus();
+    } else if (ui.filterLineEdit->isVisible()) {
+        ui.filterLineEdit->setFocus();
+    }
 }
 
 

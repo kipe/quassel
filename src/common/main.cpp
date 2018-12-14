@@ -21,6 +21,12 @@
 #include <cstdlib>
 #include <memory>
 
+#ifdef HAVE_UMASK
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#endif /* HAVE_UMASK */
+
+#include <QCoreApplication>
 #include <QTextCodec>
 
 #ifdef BUILD_CORE
@@ -65,9 +71,17 @@ Q_IMPORT_PLUGIN(qgif)
 #endif
 
 #include "quassel.h"
+#include "types.h"
 
 int main(int argc, char **argv)
 {
+#ifdef HAVE_UMASK
+    umask(S_IRWXG | S_IRWXO);
+#endif
+
+    // Instantiate early, so log messages are handled
+    Quassel quassel;
+
 #if QT_VERSION < 0x050000
     // All our source files are in UTF-8, and Qt5 even requires that
     QTextCodec::setCodecForCStrings(QTextCodec::codecForName("UTF-8"));
@@ -84,29 +98,39 @@ int main(int argc, char **argv)
 #if QT_VERSION < 0x050000 && defined Q_OS_MAC && !defined BUILD_CORE
     QApplication::setGraphicsSystem("raster");
 #endif
-
+//Setup the High-DPI settings
+# if QT_VERSION >= 0x050600 && defined(Q_OS_WIN)
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling); //Added in Qt 5.6
+#endif
+# if QT_VERSION >= 0x050400
+   //Added in the early Qt5 versions (5.0?)- use 5.4 as the cutoff since lots of high-DPI work was added then
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+# endif
     // We need to explicitly initialize the required resources when linking statically
 #ifndef BUILD_QTUI
     Q_INIT_RESOURCE(sql);
 #endif
 #ifndef BUILD_CORE
     Q_INIT_RESOURCE(pics);
-    Q_INIT_RESOURCE(hicolor);
+    Q_INIT_RESOURCE(hicolor_icons);
 #endif
 
 #ifdef EMBED_DATA
     Q_INIT_RESOURCE(i18n);
 # ifndef BUILD_CORE
     Q_INIT_RESOURCE(data);
-#   ifdef WITH_OXYGEN
-    Q_INIT_RESOURCE(oxygen);
+    Q_INIT_RESOURCE(breeze_icons);
+    Q_INIT_RESOURCE(breeze_dark_icons);
+#  ifdef WITH_OXYGEN_ICONS
+    Q_INIT_RESOURCE(oxygen_icons);
+#  endif
+#  ifdef WITH_BUNDLED_ICONS
+      Q_INIT_RESOURCE(breeze_icon_theme);
+      Q_INIT_RESOURCE(breeze_dark_icon_theme);
+#   ifdef WITH_OXYGEN_ICONS
+      Q_INIT_RESOURCE(oxygen_icon_theme);
 #   endif
-#   ifdef WITH_BREEZE
-    Q_INIT_RESOURCE(breeze);
-#   endif
-#   ifdef WITH_BREEZE_DARK
-    Q_INIT_RESOURCE(breezedark);
-#   endif
+#  endif
 # endif
 #endif
 
@@ -144,6 +168,11 @@ int main(int argc, char **argv)
     cliParser->addOption("configdir", 'c', "Specify the directory holding configuration files, the SQlite database and the SSL certificate", "path");
 #endif
     cliParser->addOption("datadir", 0, "DEPRECATED - Use --configdir instead", "path");
+    cliParser->addOption("loglevel", 'L', "Loglevel Debug|Info|Warning|Error", "level", "Info");
+#ifdef HAVE_SYSLOG
+    cliParser->addSwitch("syslog", 0, "Log to syslog");
+#endif
+    cliParser->addOption("logfile", 'l', "Log to a file", "path");
 
 #ifndef BUILD_CORE
     // put client-only arguments here
@@ -158,23 +187,27 @@ int main(int argc, char **argv)
     cliParser->addOption("listen", 0, "The address(es) quasselcore will listen on", "<address>[,<address>[,...]]", "::,0.0.0.0");
     cliParser->addOption("port", 'p', "The port quasselcore will listen at", "port", "4242");
     cliParser->addSwitch("norestore", 'n', "Don't restore last core's state");
-    cliParser->addOption("loglevel", 'L', "Loglevel Debug|Info|Warning|Error", "level", "Info");
-#ifdef HAVE_SYSLOG
-    cliParser->addSwitch("syslog", 0, "Log to syslog");
-#endif
-    cliParser->addOption("logfile", 'l', "Log to a file", "path");
+    cliParser->addSwitch("config-from-environment", 0, "Load configuration from environment variables");
     cliParser->addOption("select-backend", 0, "Switch storage backend (migrating data if possible)", "backendidentifier");
     cliParser->addOption("select-authenticator", 0, "Select authentication backend", "authidentifier");
     cliParser->addSwitch("add-user", 0, "Starts an interactive session to add a new core user");
     cliParser->addOption("change-userpass", 0, "Starts an interactive session to change the password of the user identified by <username>", "username");
-    cliParser->addSwitch("oidentd", 0, "Enable oidentd integration");
+    cliParser->addSwitch("oidentd", 0, "Enable oidentd integration.  In most cases you should also enable --strict-ident");
     cliParser->addOption("oidentd-conffile", 0, "Set path to oidentd configuration file", "file");
-    cliParser->addSwitch("oidentd-strict", 0, "Use users' quasselcore username as ident reply. Ignores each user's configured ident setting. Only meaningful with --oidentd.");
+    cliParser->addSwitch("strict-ident", 0, "Use users' quasselcore username as ident reply. Ignores each user's configured ident setting.");
+    cliParser->addSwitch("ident-daemon", 0, "Enable internal ident daemon");
+    cliParser->addOption("ident-port", 0, "The port quasselcore will listen at for ident requests. Only meaningful with --ident-daemon", "port", "10113");
 #ifdef HAVE_SSL
     cliParser->addSwitch("require-ssl", 0, "Require SSL for remote (non-loopback) client connections");
     cliParser->addOption("ssl-cert", 0, "Specify the path to the SSL Certificate", "path", "configdir/quasselCert.pem");
     cliParser->addOption("ssl-key", 0, "Specify the path to the SSL key", "path", "ssl-cert-path");
 #endif
+    cliParser->addSwitch("debug-irc", 0,
+                         "Enable logging of all raw IRC messages to debug log, including "
+                         "passwords!  In most cases you should also set --loglevel Debug");
+    cliParser->addOption("debug-irc-id", 0,
+                         "Limit raw IRC logging to this network ID.  Implies --debug-irc",
+                         "database network ID", "-1");
     cliParser->addSwitch("enable-experimental-dcc", 0, "Enable highly experimental and unfinished support for CTCP DCC (DANGEROUS)");
 #endif
 
@@ -189,20 +222,8 @@ int main(int argc, char **argv)
 #if defined BUILD_CORE
     CoreApplication app(argc, argv);
 #elif defined BUILD_QTUI
-# if QT_VERSION >= 0x050600 && defined(Q_OS_WIN)
-    QtUiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-#endif
-# if QT_VERSION >= 0x050700
-    QtUiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-# endif
     QtUiApplication app(argc, argv);
 #elif defined BUILD_MONO
-# if QT_VERSION >= 0x050600 && defined(Q_OS_WIN)
-    MonolithicApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-#endif
-# if QT_VERSION >= 0x050700
-    MonolithicApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-# endif
     MonolithicApplication app(argc, argv);
 #endif
 
@@ -227,9 +248,15 @@ int main(int argc, char **argv)
     AboutData::setQuasselPersons(&aboutData);
     KAboutData::setApplicationData(aboutData.kAboutData());
 #endif
-
-    if (!app.init())
-        return EXIT_FAILURE;
+    try {
+        app.init();
+    }
+    catch (ExitException e) {
+        if (!e.errorString.isEmpty()) {
+            qCritical() << e.errorString;
+        }
+        return e.exitCode;
+    }
 
     return app.exec();
 }

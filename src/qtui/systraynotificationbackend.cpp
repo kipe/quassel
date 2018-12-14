@@ -18,16 +18,16 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include "systraynotificationbackend.h"
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QGroupBox>
-#include <QIcon>
 #include <QHBoxLayout>
-
-#include "systraynotificationbackend.h"
 
 #include "client.h"
 #include "clientsettings.h"
+#include "icon.h"
 #include "mainwin.h"
 #include "networkmodel.h"
 #include "qtui.h"
@@ -39,7 +39,6 @@ SystrayNotificationBackend::SystrayNotificationBackend(QObject *parent)
 {
     NotificationSettings notificationSettings;
     notificationSettings.initAndNotify("Systray/ShowBubble", this, SLOT(showBubbleChanged(QVariant)), true);
-    notificationSettings.initAndNotify("Systray/Animate", this, SLOT(animateChanged(QVariant)), true);
 
     connect(QtUi::mainWindow()->systemTray(), SIGNAL(messageClicked(uint)), SLOT(notificationActivated(uint)));
     connect(QtUi::mainWindow()->systemTray(), SIGNAL(activated(SystemTray::ActivationReason)),
@@ -63,9 +62,6 @@ void SystrayNotificationBackend::notify(const Notification &n)
         QtUi::mainWindow()->systemTray()->showMessage(title, message, SystemTray::Information, 10000, n.notificationId);
     }
 
-    if (_animate)
-        QtUi::mainWindow()->systemTray()->setAlert(true);
-
     updateToolTip();
 }
 
@@ -81,9 +77,6 @@ void SystrayNotificationBackend::close(uint notificationId)
     }
 
     QtUi::mainWindow()->systemTray()->closeMessage(notificationId);
-
-    //if(!_notifications.count()) //FIXME make configurable
-    QtUi::mainWindow()->systemTray()->setAlert(false);
 
     updateToolTip();
 }
@@ -133,12 +126,6 @@ void SystrayNotificationBackend::showBubbleChanged(const QVariant &v)
 }
 
 
-void SystrayNotificationBackend::animateChanged(const QVariant &v)
-{
-    _animate = v.toBool();
-}
-
-
 void SystrayNotificationBackend::updateToolTip()
 {
     QtUi::mainWindow()->systemTray()->setToolTip("Quassel IRC",
@@ -157,7 +144,7 @@ SettingsPage *SystrayNotificationBackend::createConfigWidget() const
 SystrayNotificationBackend::ConfigWidget::ConfigWidget(QWidget *parent) : SettingsPage("Internal", "SystrayNotification", parent)
 {
     _showBubbleBox = new QCheckBox(tr("Show a message in a popup"));
-    _showBubbleBox->setIcon(QIcon::fromTheme("dialog-information"));
+    _showBubbleBox->setIcon(icon::get("dialog-information"));
     connect(_showBubbleBox, SIGNAL(toggled(bool)), this, SLOT(widgetChanged()));
     QHBoxLayout *layout = new QHBoxLayout(this);
     layout->addWidget(_showBubbleBox);

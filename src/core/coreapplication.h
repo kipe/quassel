@@ -20,37 +20,27 @@
 
 #pragma once
 
+#include <memory>
+
 #include <QCoreApplication>
 
+#include "core.h"
 #include "quassel.h"
 
-/// Encapsulates CoreApplication's logic.
-/** This allows it to be reused within MonolithicApplication as well.
- */
-class CoreApplicationInternal
-{
-    Q_DECLARE_TR_FUNCTIONS(CoreApplicationInternal)
-
-public:
-    CoreApplicationInternal();
-    ~CoreApplicationInternal();
-
-    bool init();
-
-private:
-    bool _coreCreated;
-};
-
+class Core;
 
 class CoreApplication : public QCoreApplication
 {
     Q_OBJECT
+
 public:
     CoreApplication(int &argc, char **argv);
-    ~CoreApplication();
 
-    bool init();
+    void init();
+
+private slots:
+    void onShutdownComplete();
 
 private:
-    CoreApplicationInternal *_internal;
+    std::unique_ptr<Core> _core;
 };

@@ -20,23 +20,38 @@
 
 #pragma once
 
+#include <QPointer>
+#include <QThread>
+
 #include "qtuiapplication.h"
 
-class CoreApplicationInternal;
+class Core;
+class InternalPeer;
 
 class MonolithicApplication : public QtUiApplication
 {
     Q_OBJECT
+
 public:
     MonolithicApplication(int &, char **);
-    ~MonolithicApplication();
 
-    bool init() override;
+    void init() override;
+
+protected:
+    Quassel::QuitHandler quitHandler() override;
+
+signals:
+    void connectInternalPeer(QPointer<InternalPeer> peer);
 
 private slots:
+    void onConnectionRequest(QPointer<InternalPeer> peer);
+    void onClientDestroyed();
+    void onCoreShutdown();
+
+private:
     void startInternalCore();
 
 private:
-    CoreApplicationInternal *_internal;
-    bool _internalInitDone;
+    QPointer<Core> _core;
+    QThread _coreThread;
 };

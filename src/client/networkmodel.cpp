@@ -40,7 +40,7 @@
 *  Network Items
 *****************************************/
 NetworkItem::NetworkItem(const NetworkId &netid, AbstractTreeItem *parent)
-    : PropertyMapItem(QList<QString>() << "networkName" << "currentServer" << "nickCount", parent),
+    : PropertyMapItem(parent),
     _networkId(netid),
     _statusBufferItem(0)
 {
@@ -50,6 +50,13 @@ NetworkItem::NetworkItem(const NetworkId &netid, AbstractTreeItem *parent)
     setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
     connect(this, SIGNAL(networkDataChanged(int)), this, SIGNAL(dataChanged(int)));
     connect(this, SIGNAL(beginRemoveChilds(int, int)), this, SLOT(onBeginRemoveChilds(int, int)));
+}
+
+
+QStringList NetworkItem::propertyOrder() const
+{
+    static auto order = QStringList() << "networkName" << "currentServer" << "nickCount";
+    return order;
 }
 
 
@@ -147,8 +154,12 @@ BufferItem *NetworkItem::bufferItem(const BufferInfo &bufferInfo)
     }
 
     BufferSyncer *bufferSyncer = Client::bufferSyncer();
-    if (bufferSyncer)
-        bufferItem->addActivity(bufferSyncer->activity(bufferItem->bufferId()), false);
+    if (bufferSyncer) {
+        bufferItem->addActivity(
+                bufferSyncer->activity(bufferItem->bufferId()),
+                bufferSyncer->highlightCount(bufferItem->bufferId()) > 0
+        );
+    }
 
     return bufferItem;
 }
@@ -279,11 +290,18 @@ void NetworkItem::onNetworkDestroyed()
 *  Fancy Buffer Items
 *****************************************/
 BufferItem::BufferItem(const BufferInfo &bufferInfo, AbstractTreeItem *parent)
-    : PropertyMapItem(QStringList() << "bufferName" << "topic" << "nickCount", parent),
+    : PropertyMapItem(parent),
     _bufferInfo(bufferInfo),
     _activity(BufferInfo::NoActivity)
 {
     setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsDragEnabled);
+}
+
+
+QStringList BufferItem::propertyOrder() const
+{
+    static auto order = QStringList() << "bufferName" << "topic" << "nickCount";
+    return order;
 }
 
 
@@ -418,7 +436,6 @@ bool BufferItem::setData(int column, const QVariant &value, int role)
     default:
         return PropertyMapItem::setData(column, value, role);
     }
-    return true;
 }
 
 
@@ -637,8 +654,8 @@ QString QueryBufferItem::toolTip(int column) const
                    NetworkItem::escapeHTML(tr("Identified for this nick")),
                    !accountAdded);
             // Don't add the account row again if information's already added via account-notify
-            // Mark the row as added
-            accountAdded = true;
+            // Not used further down...
+            // accountAdded = true;
         } else {
             addRow(NetworkItem::escapeHTML(tr("Service Reply"), true),
                    NetworkItem::escapeHTML(_ircUser->whoisServiceReply()),
@@ -988,12 +1005,19 @@ void ChannelBufferItem::userModeChanged(IrcUser *ircUser)
 const QList<QChar> UserCategoryItem::categories = QList<QChar>() << 'q' << 'a' << 'o' << 'h' << 'v';
 
 UserCategoryItem::UserCategoryItem(int category, AbstractTreeItem *parent)
-    : PropertyMapItem(QStringList() << "categoryName", parent),
+    : PropertyMapItem(parent),
     _category(category)
 {
     setFlags(Qt::ItemIsEnabled);
     setTreeItemFlags(AbstractTreeItem::DeleteOnLastChildRemoved);
     setObjectName(parent->data(0, Qt::DisplayRole).toString() + "/" + QString::number(category));
+}
+
+
+QStringList UserCategoryItem::propertyOrder() const
+{
+    static QStringList order{"categoryName"};
+    return order;
 }
 
 
@@ -1090,13 +1114,20 @@ QVariant UserCategoryItem::data(int column, int role) const
 *  Irc User Items
 *****************************************/
 IrcUserItem::IrcUserItem(IrcUser *ircUser, AbstractTreeItem *parent)
-    : PropertyMapItem(QStringList() << "nickName", parent),
+    : PropertyMapItem(parent),
     _ircUser(ircUser)
 {
     setObjectName(ircUser->nick());
     connect(ircUser, SIGNAL(quited()), this, SLOT(ircUserQuited()));
     connect(ircUser, SIGNAL(nickSet(QString)), this, SIGNAL(dataChanged()));
     connect(ircUser, SIGNAL(awaySet(bool)), this, SIGNAL(dataChanged()));
+}
+
+
+QStringList IrcUserItem::propertyOrder() const
+{
+    static QStringList order{"nickName"};
+    return order;
 }
 
 
@@ -1204,8 +1235,8 @@ QString IrcUserItem::toolTip(int column) const
                NetworkItem::escapeHTML(tr("Identified for this nick")),
                !accountAdded);
         // Don't add the account row again if information's already added via account-notify
-        // Mark the row as added
-        accountAdded = true;
+        // Not used further down...
+        // accountAdded = true;
     } else {
         addRow(NetworkItem::escapeHTML(tr("Service Reply"), true),
                NetworkItem::escapeHTML(_ircUser->whoisServiceReply()),
@@ -1756,4 +1787,13 @@ void NetworkModel::bufferActivityChanged(BufferId bufferId, const Message::Types
     auto visibleTypes = ~hiddenTypes;
     auto activityVisibleTypesIntersection = activity & visibleTypes;
     _bufferItem->setActivity(activityVisibleTypesIntersection, false);
+}
+
+void NetworkModel::highlightCountChanged(BufferId bufferId, int count) {
+    auto _bufferItem = findBufferItem(bufferId);
+    if (!_bufferItem) {
+        qDebug() << "NetworkModel::highlightCountChanged(): buffer is unknown:" << bufferId;
+        return;
+    }
+    _bufferItem->addActivity(Message::Types{}, count > 0);
 }

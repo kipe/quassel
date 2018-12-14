@@ -18,9 +18,12 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include <algorithm>
+
 #include <QTextCodec>
 
 #include "network.h"
+#include "peer.h"
 
 QTextCodec *Network::_defaultCodecForServer = 0;
 QTextCodec *Network::_defaultCodecForEncoding = 0;
@@ -173,6 +176,42 @@ QString Network::modeToPrefix(const QString &mode) const
         return QString(prefixes()[prefixModes().indexOf(mode)]);
     else
         return QString();
+}
+
+
+QString Network::sortPrefixModes(const QString &modes) const
+{
+    // If modes is empty or we don't have any modes, nothing can be sorted, bail out early
+    if (modes.isEmpty() || prefixModes().isEmpty()) {
+        return modes;
+    }
+
+    // Store a copy of the modes for modification
+    // QString should be efficient and not copy memory if nothing changes, but if mistaken,
+    // std::is_sorted could be called first.
+    QString sortedModes = QString(modes);
+
+    // Sort modes as if a QChar array
+    // See https://en.cppreference.com/w/cpp/algorithm/sort
+    // Defining lambda with [&] implicitly captures variables by reference
+    std::sort(sortedModes.begin(), sortedModes.end(), [&](const QChar &lmode, const QChar &rmode) {
+        // Compare characters according to prefix modes
+        // Return true if lmode comes before rmode (is "less than")
+
+        // Check for unknown modes...
+        if (!prefixModes().contains(lmode)) {
+            // Left mode not in prefix list, send to end
+            return false;
+        } else if (!prefixModes().contains(rmode)) {
+            // Right mode not in prefix list, send to end
+            return true;
+        } else {
+            // Both characters known, sort according to index in prefixModes()
+            return (prefixModes().indexOf(lmode) < prefixModes().indexOf(rmode));
+        }
+    });
+
+    return sortedModes;
 }
 
 
@@ -881,6 +920,8 @@ QVariantMap Network::initCaps() const
 // (without compression) with a decent amount of IrcUsers.
 QVariantMap Network::initIrcUsersAndChannels() const
 {
+    Q_ASSERT(proxy());
+    Q_ASSERT(proxy()->targetPeer());
     QVariantMap usersAndChannels;
 
     if (_ircUsers.count()) {
@@ -888,7 +929,21 @@ QVariantMap Network::initIrcUsersAndChannels() const
         QHash<QString, IrcUser *>::const_iterator it = _ircUsers.begin();
         QHash<QString, IrcUser *>::const_iterator end = _ircUsers.end();
         while (it != end) {
-            const QVariantMap &map = it.value()->toVariantMap();
+            QVariantMap map = it.value()->toVariantMap();
+            // If the peer doesn't support LongTime, replace the lastAwayMessageTime field
+            // with the 32-bit numerical seconds value (lastAwayMessage) used in older versions
+            if (!proxy()->targetPeer()->hasFeature(Quassel::Feature::LongTime)) {
+#if QT_VERSION >= 0x050800
+                int lastAwayMessage = it.value()->lastAwayMessageTime().toSecsSinceEpoch();
+#else
+                // toSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for now.
+                // See https://doc.qt.io/qt-5/qdatetime.html#toMSecsSinceEpoch
+                int lastAwayMessage = it.value()->lastAwayMessageTime().toMSecsSinceEpoch() / 1000;
+#endif
+                map.remove("lastAwayMessageTime");
+                map["lastAwayMessage"] = lastAwayMessage;
+            }
+
             QVariantMap::const_iterator mapiter = map.begin();
             while (mapiter != map.end()) {
                 users[mapiter.key()] << mapiter.value();
@@ -930,6 +985,7 @@ QVariantMap Network::initIrcUsersAndChannels() const
 void Network::initSetIrcUsersAndChannels(const QVariantMap &usersAndChannels)
 {
     Q_ASSERT(proxy());
+    Q_ASSERT(proxy()->sourcePeer());
     if (isInitialized()) {
         qWarning() << "Network" << networkId() << "received init data for users and channels although there already are known users or channels!";
         return;
@@ -954,6 +1010,22 @@ void Network::initSetIrcUsersAndChannels(const QVariantMap &usersAndChannels)
         QVariantMap map;
         foreach(const QString &key, users.keys())
             map[key] = users[key].toList().at(i);
+
+        // If the peer doesn't support LongTime, upconvert the lastAwayMessageTime field
+        // from the 32-bit numerical seconds value used in older versions to QDateTime
+        if (!proxy()->sourcePeer()->hasFeature(Quassel::Feature::LongTime)) {
+            QDateTime lastAwayMessageTime = QDateTime();
+            lastAwayMessageTime.setTimeSpec(Qt::UTC);
+#if QT_VERSION >= 0x050800
+            lastAwayMessageTime.fromSecsSinceEpoch(map.take("lastAwayMessage").toInt());
+#else
+            // toSecsSinceEpoch() was added in Qt 5.8.  Manually downconvert to seconds for now.
+            // See https://doc.qt.io/qt-5/qdatetime.html#toMSecsSinceEpoch
+            lastAwayMessageTime.fromMSecsSinceEpoch(map.take("lastAwayMessage").toInt() * 1000);
+#endif
+            map["lastAwayMessageTime"] = lastAwayMessageTime;
+        }
+
         newIrcUser(map["nick"].toString(), map); // newIrcUser() properly handles the hostmask being just the nick
     }
 
@@ -1087,54 +1159,34 @@ void Network::determinePrefixes() const
  * NetworkInfo
  ************************************************************************/
 
-NetworkInfo::NetworkInfo()
-    : networkId(0),
-    identity(1),
-    useRandomServer(false),
-    useAutoIdentify(false),
-    autoIdentifyService("NickServ"),
-    useSasl(false),
-    useAutoReconnect(true),
-    autoReconnectInterval(60),
-    autoReconnectRetries(20),
-    unlimitedReconnectRetries(false),
-    rejoinChannels(true),
-    useCustomMessageRate(false),
-    messageRateBurstSize(5),
-    messageRateDelay(2200),
-    unlimitedMessageRate(false)
-{
-}
-
 
 bool NetworkInfo::operator==(const NetworkInfo &other) const
 {
-    if (networkId != other.networkId) return false;
-    if (networkName != other.networkName) return false;
-    if (identity != other.identity) return false;
-    if (codecForServer != other.codecForServer) return false;
-    if (codecForEncoding != other.codecForEncoding) return false;
-    if (codecForDecoding != other.codecForDecoding) return false;
-    if (serverList != other.serverList) return false;
-    if (useRandomServer != other.useRandomServer) return false;
-    if (perform != other.perform) return false;
-    if (useAutoIdentify != other.useAutoIdentify) return false;
-    if (autoIdentifyService != other.autoIdentifyService) return false;
-    if (autoIdentifyPassword != other.autoIdentifyPassword) return false;
-    if (useSasl != other.useSasl) return false;
-    if (saslAccount != other.saslAccount) return false;
-    if (saslPassword != other.saslPassword) return false;
-    if (useAutoReconnect != other.useAutoReconnect) return false;
-    if (autoReconnectInterval != other.autoReconnectInterval) return false;
-    if (autoReconnectRetries != other.autoReconnectRetries) return false;
-    if (unlimitedReconnectRetries != other.unlimitedReconnectRetries) return false;
-    if (rejoinChannels != other.rejoinChannels) return false;
-    // Custom rate limiting
-    if (useCustomMessageRate != other.useCustomMessageRate) return false;
-    if (messageRateBurstSize != other.messageRateBurstSize) return false;
-    if (messageRateDelay != other.messageRateDelay) return false;
-    if (unlimitedMessageRate != other.unlimitedMessageRate) return false;
-    return true;
+    return     networkName               == other.networkName
+            && serverList                == other.serverList
+            && perform                   == other.perform
+            && autoIdentifyService       == other.autoIdentifyService
+            && autoIdentifyPassword      == other.autoIdentifyPassword
+            && saslAccount               == other.saslAccount
+            && saslPassword              == other.saslPassword
+            && codecForServer            == other.codecForServer
+            && codecForEncoding          == other.codecForEncoding
+            && codecForDecoding          == other.codecForDecoding
+            && networkId                 == other.networkId
+            && identity                  == other.identity
+            && messageRateBurstSize      == other.messageRateBurstSize
+            && messageRateDelay          == other.messageRateDelay
+            && autoReconnectInterval     == other.autoReconnectInterval
+            && autoReconnectRetries      == other.autoReconnectRetries
+            && rejoinChannels            == other.rejoinChannels
+            && useRandomServer           == other.useRandomServer
+            && useAutoIdentify           == other.useAutoIdentify
+            && useSasl                   == other.useSasl
+            && useAutoReconnect          == other.useAutoReconnect
+            && unlimitedReconnectRetries == other.unlimitedReconnectRetries
+            && useCustomMessageRate      == other.useCustomMessageRate
+            && unlimitedMessageRate      == other.unlimitedMessageRate
+        ;
 }
 
 
@@ -1147,31 +1199,30 @@ bool NetworkInfo::operator!=(const NetworkInfo &other) const
 QDataStream &operator<<(QDataStream &out, const NetworkInfo &info)
 {
     QVariantMap i;
-    i["NetworkId"] = QVariant::fromValue<NetworkId>(info.networkId);
-    i["NetworkName"] = info.networkName;
-    i["Identity"] = QVariant::fromValue<IdentityId>(info.identity);
-    i["CodecForServer"] = info.codecForServer;
-    i["CodecForEncoding"] = info.codecForEncoding;
-    i["CodecForDecoding"] = info.codecForDecoding;
-    i["ServerList"] = toVariantList(info.serverList);
-    i["UseRandomServer"] = info.useRandomServer;
-    i["Perform"] = info.perform;
-    i["UseAutoIdentify"] = info.useAutoIdentify;
-    i["AutoIdentifyService"] = info.autoIdentifyService;
-    i["AutoIdentifyPassword"] = info.autoIdentifyPassword;
-    i["UseSasl"] = info.useSasl;
-    i["SaslAccount"] = info.saslAccount;
-    i["SaslPassword"] = info.saslPassword;
-    i["UseAutoReconnect"] = info.useAutoReconnect;
-    i["AutoReconnectInterval"] = info.autoReconnectInterval;
-    i["AutoReconnectRetries"] = info.autoReconnectRetries;
+    i["NetworkName"]               = info.networkName;
+    i["ServerList"]                = toVariantList(info.serverList);
+    i["Perform"]                   = info.perform;
+    i["AutoIdentifyService"]       = info.autoIdentifyService;
+    i["AutoIdentifyPassword"]      = info.autoIdentifyPassword;
+    i["SaslAccount"]               = info.saslAccount;
+    i["SaslPassword"]              = info.saslPassword;
+    i["CodecForServer"]            = info.codecForServer;
+    i["CodecForEncoding"]          = info.codecForEncoding;
+    i["CodecForDecoding"]          = info.codecForDecoding;
+    i["NetworkId"]                 = QVariant::fromValue<NetworkId>(info.networkId);
+    i["Identity"]                  = QVariant::fromValue<IdentityId>(info.identity);
+    i["MessageRateBurstSize"]      = info.messageRateBurstSize;
+    i["MessageRateDelay"]          = info.messageRateDelay;
+    i["AutoReconnectInterval"]     = info.autoReconnectInterval;
+    i["AutoReconnectRetries"]      = info.autoReconnectRetries;
+    i["RejoinChannels"]            = info.rejoinChannels;
+    i["UseRandomServer"]           = info.useRandomServer;
+    i["UseAutoIdentify"]           = info.useAutoIdentify;
+    i["UseSasl"]                   = info.useSasl;
+    i["UseAutoReconnect"]          = info.useAutoReconnect;
     i["UnlimitedReconnectRetries"] = info.unlimitedReconnectRetries;
-    i["RejoinChannels"] = info.rejoinChannels;
-    // Custom rate limiting
-    i["UseCustomMessageRate"] = info.useCustomMessageRate;
-    i["MessageRateBurstSize"] = info.messageRateBurstSize;
-    i["MessageRateDelay"] = info.messageRateDelay;
-    i["UnlimitedMessageRate"] = info.unlimitedMessageRate;
+    i["UseCustomMessageRate"]      = info.useCustomMessageRate;
+    i["UnlimitedMessageRate"]      = info.unlimitedMessageRate;
     out << i;
     return out;
 }
@@ -1181,31 +1232,30 @@ QDataStream &operator>>(QDataStream &in, NetworkInfo &info)
 {
     QVariantMap i;
     in >> i;
-    info.networkId = i["NetworkId"].value<NetworkId>();
-    info.networkName = i["NetworkName"].toString();
-    info.identity = i["Identity"].value<IdentityId>();
-    info.codecForServer = i["CodecForServer"].toByteArray();
-    info.codecForEncoding = i["CodecForEncoding"].toByteArray();
-    info.codecForDecoding = i["CodecForDecoding"].toByteArray();
-    info.serverList = fromVariantList<Network::Server>(i["ServerList"].toList());
-    info.useRandomServer = i["UseRandomServer"].toBool();
-    info.perform = i["Perform"].toStringList();
-    info.useAutoIdentify = i["UseAutoIdentify"].toBool();
-    info.autoIdentifyService = i["AutoIdentifyService"].toString();
-    info.autoIdentifyPassword = i["AutoIdentifyPassword"].toString();
-    info.useSasl = i["UseSasl"].toBool();
-    info.saslAccount = i["SaslAccount"].toString();
-    info.saslPassword = i["SaslPassword"].toString();
-    info.useAutoReconnect = i["UseAutoReconnect"].toBool();
-    info.autoReconnectInterval = i["AutoReconnectInterval"].toUInt();
-    info.autoReconnectRetries = i["AutoReconnectRetries"].toInt();
+    info.networkName               = i["NetworkName"].toString();
+    info.serverList                = fromVariantList<Network::Server>(i["ServerList"].toList());
+    info.perform                   = i["Perform"].toStringList();
+    info.autoIdentifyService       = i["AutoIdentifyService"].toString();
+    info.autoIdentifyPassword      = i["AutoIdentifyPassword"].toString();
+    info.saslAccount               = i["SaslAccount"].toString();
+    info.saslPassword              = i["SaslPassword"].toString();
+    info.codecForServer            = i["CodecForServer"].toByteArray();
+    info.codecForEncoding          = i["CodecForEncoding"].toByteArray();
+    info.codecForDecoding          = i["CodecForDecoding"].toByteArray();
+    info.networkId                 = i["NetworkId"].value<NetworkId>();
+    info.identity                  = i["Identity"].value<IdentityId>();
+    info.messageRateBurstSize      = i["MessageRateBurstSize"].toUInt();
+    info.messageRateDelay          = i["MessageRateDelay"].toUInt();
+    info.autoReconnectInterval     = i["AutoReconnectInterval"].toUInt();
+    info.autoReconnectRetries      = i["AutoReconnectRetries"].toInt();
+    info.rejoinChannels            = i["RejoinChannels"].toBool();
+    info.useRandomServer           = i["UseRandomServer"].toBool();
+    info.useAutoIdentify           = i["UseAutoIdentify"].toBool();
+    info.useSasl                   = i["UseSasl"].toBool();
+    info.useAutoReconnect          = i["UseAutoReconnect"].toBool();
     info.unlimitedReconnectRetries = i["UnlimitedReconnectRetries"].toBool();
-    info.rejoinChannels = i["RejoinChannels"].toBool();
-    // Custom rate limiting
-    info.useCustomMessageRate = i["UseCustomMessageRate"].toBool();
-    info.messageRateBurstSize = i["MessageRateBurstSize"].toUInt();
-    info.messageRateDelay = i["MessageRateDelay"].toUInt();
-    info.unlimitedMessageRate = i["UnlimitedMessageRate"].toBool();
+    info.useCustomMessageRate      = i["UseCustomMessageRate"].toBool();
+    info.unlimitedMessageRate      = i["UnlimitedMessageRate"].toBool();
     return in;
 }
 

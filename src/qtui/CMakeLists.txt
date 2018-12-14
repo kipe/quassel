@@ -25,7 +25,7 @@ set(SOURCES
     coresessionwidget.cpp
     debugbufferviewoverlay.cpp
     debugconsole.cpp
-    debuglogwidget.cpp
+    debuglogdlg.cpp
     debugmessagemodelfilter.cpp
     inputwidget.cpp
     ircconnectionwizard.cpp
@@ -46,6 +46,7 @@ set(SOURCES
     settingspagedlg.cpp
     simplenetworkeditor.cpp
     systemtray.cpp
+    systrayanimationnotificationbackend.cpp
     systraynotificationbackend.cpp
     taskbarnotificationbackend.cpp
     titlesetter.cpp
@@ -71,15 +72,16 @@ set(FORMS
     coresessionwidget.ui
     debugbufferviewoverlay.ui
     debugconsole.ui
-    debuglogwidget.ui
+    debuglogdlg.ui
     inputwidget.ui
     msgprocessorstatuswidget.ui
     nicklistwidget.ui
     passwordchangedlg.ui
+    receivefiledlg.ui
     settingsdlg.ui
     settingspagedlg.ui
     simplenetworkeditor.ui
-    receivefiledlg.ui
+    systrayanimationconfigwidget.ui
     topicwidget.ui
 )
 

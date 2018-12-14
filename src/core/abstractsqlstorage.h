@@ -43,8 +43,12 @@ public:
     virtual std::unique_ptr<AbstractSqlMigrationWriter> createMigrationWriter() { return {}; }
 
 public slots:
-    virtual State init(const QVariantMap &settings = QVariantMap());
-    virtual bool setup(const QVariantMap &settings = QVariantMap());
+    virtual State init(const QVariantMap &settings = QVariantMap(),
+                       const QProcessEnvironment &environment = {},
+                       bool loadFromEnvironment = false);
+    virtual bool setup(const QVariantMap &settings = QVariantMap(),
+                       const QProcessEnvironment &environment = {},
+                       bool loadFromEnvironment = false);
 
 protected:
     inline virtual void sync() {};
@@ -82,7 +86,9 @@ protected:
     virtual bool updateSchemaVersion(int newVersion) = 0;
     virtual bool setupSchemaVersion(int version) = 0;
 
-    virtual void setConnectionProperties(const QVariantMap &properties) = 0;
+    virtual void setConnectionProperties(const QVariantMap &properties,
+                                         const QProcessEnvironment &environment,
+                                         bool loadFromEnvironment) = 0;
     virtual QString driverName() = 0;
     inline virtual QString hostName() { return QString(); }
     inline virtual int port() { return -1; }
@@ -118,6 +124,14 @@ private:
     QHash<QThread *, Connection *> _connectionPool;
 };
 
+struct SenderData {
+    QString sender;
+    QString realname;
+    QString avatarurl;
+
+    friend uint qHash(const SenderData &key);
+    friend bool operator==(const SenderData &a, const SenderData &b);
+};
 
 // ========================================
 //  AbstractSqlStorage::Connection
@@ -153,8 +167,10 @@ public:
     };
 
     struct SenderMO {
-        int senderId;
+        qint64 senderId;
         QString sender;
+        QString realname;
+        QString avatarurl;
         SenderMO() : senderId(0) {}
     };
 
@@ -173,7 +189,7 @@ public:
         bool autoAwayReasonEnabled;
         bool detachAwayEnabled;
         QString detachAwayReason;
-        bool detchAwayReasonEnabled;
+        bool detachAwayReasonEnabled;
         QString ident;
         QString kickReason;
         QString partReason;
@@ -189,37 +205,35 @@ public:
     };
 
     struct NetworkMO {
-        NetworkId networkid;
         UserId userid;
         QString networkname;
-        IdentityId identityid;
-        QString encodingcodec;
-        QString decodingcodec;
-        QString servercodec;
-        bool userandomserver;
         QString perform;
-        bool useautoidentify;
         QString autoidentifyservice;
         QString autoidentifypassword;
-        bool useautoreconnect;
-        int autoreconnectinterval;
-        int autoreconnectretries;
-        bool unlimitedconnectretries;
-        bool rejoinchannels;
-        // Custom rate limiting
-        bool usecustommessagerate;
-        int messagerateburstsize;
-        int messageratedelay;
-        bool unlimitedmessagerate;
-        // ...
-        bool connected;
+        QString saslaccount;
+        QString saslpassword;
+        QString servercodec;
+        QString encodingcodec;
+        QString decodingcodec;
         QString usermode;
         QString awaymessage;
         QString attachperform;
         QString detachperform;
+        NetworkId networkid;
+        IdentityId identityid;
+        int messagerateburstsize;
+        int messageratedelay;
+        int autoreconnectinterval;
+        int autoreconnectretries;
+        bool rejoinchannels;
+        bool userandomserver;
+        bool useautoidentify;
         bool usesasl;
-        QString saslaccount;
-        QString saslpassword;
+        bool useautoreconnect;
+        bool unlimitedconnectretries;
+        bool usecustommessagerate;
+        bool unlimitedmessagerate;
+        bool connected;
     };
 
     struct BufferMO {
@@ -230,12 +244,14 @@ public:
         QString buffername;
         QString buffercname;
         int buffertype;
-        int lastmsgid;
-        int lastseenmsgid;
-        int markerlinemsgid;
+        qint64 lastmsgid;
+        qint64 lastseenmsgid;
+        qint64 markerlinemsgid;
         int bufferactivity;
+        int highlightcount;
         QString key;
         bool joined;
+        QString cipher;
     };
 
     struct BacklogMO {
@@ -244,7 +260,7 @@ public:
         BufferId bufferid;
         int type;
         int flags;
-        int senderid;
+        qint64 senderid;
         QString senderprefixes;
         QString message;
     };
@@ -273,6 +289,11 @@ public:
         QByteArray settingvalue;
     };
 
+    struct CoreStateMO {
+        QString key;
+        QByteArray value;
+    };
+
     enum MigrationObject {
         QuasselUser,
         Sender,
@@ -282,7 +303,8 @@ public:
         Buffer,
         Backlog,
         IrcServer,
-        UserSetting
+        UserSetting,
+        CoreState
     };
 
     AbstractSqlMigrator();
@@ -328,6 +350,7 @@ public:
     virtual bool readMo(BacklogMO &backlog) = 0;
     virtual bool readMo(IrcServerMO &ircserver) = 0;
     virtual bool readMo(UserSettingMO &userSetting) = 0;
+    virtual bool readMo(CoreStateMO &coreState) = 0;
 
     bool migrateTo(AbstractSqlMigrationWriter *writer);
 
@@ -353,6 +376,7 @@ public:
     virtual bool writeMo(const BacklogMO &backlog) = 0;
     virtual bool writeMo(const IrcServerMO &ircserver) = 0;
     virtual bool writeMo(const UserSettingMO &userSetting) = 0;
+    virtual bool writeMo(const CoreStateMO &coreState) = 0;
 
     inline bool migrateFrom(AbstractSqlMigrationReader *reader) { return reader->migrateTo(this); }
 

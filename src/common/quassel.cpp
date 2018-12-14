@@ -20,13 +20,8 @@
 
 #include "quassel.h"
 
+#include <algorithm>
 #include <iostream>
-#include <signal.h>
-#if !defined Q_OS_WIN && !defined Q_OS_MAC
-#  include <sys/types.h>
-#  include <sys/time.h>
-#  include <sys/resource.h>
-#endif
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -42,6 +37,7 @@
 #include "bufferinfo.h"
 #include "identity.h"
 #include "logger.h"
+#include "logmessage.h"
 #include "message.h"
 #include "network.h"
 #include "peer.h"
@@ -49,25 +45,18 @@
 #include "syncableobject.h"
 #include "types.h"
 
+#ifndef Q_OS_WIN
+#    include "posixsignalwatcher.h"
+#else
+#    include "windowssignalwatcher.h"
+#endif
+
 #include "../../version.h"
 
-Quassel *Quassel::instance()
-{
-    static Quassel instance;
-    return &instance;
-}
-
-
 Quassel::Quassel()
+    : Singleton<Quassel>{this}
+    , _logger{new Logger{this}}
 {
-    // We catch SIGTERM and SIGINT (caused by Ctrl+C) to graceful shutdown Quassel.
-    signal(SIGTERM, handleSignal);
-    signal(SIGINT, handleSignal);
-#ifndef Q_OS_WIN
-    // SIGHUP is used to reload configuration (i.e. SSL certificates)
-    // Windows does not support SIGHUP
-    signal(SIGHUP, handleSignal);
-#endif
 }
 
 
@@ -76,33 +65,15 @@ bool Quassel::init()
     if (instance()->_initialized)
         return true;  // allow multiple invocations because of MonolithicApplication
 
-    if (instance()->_handleCrashes) {
-        // we have crashhandler for win32 and unix (based on execinfo).
-#if defined(Q_OS_WIN) || defined(HAVE_EXECINFO)
-# ifndef Q_OS_WIN
-        // we only handle crashes ourselves if coredumps are disabled
-        struct rlimit *limit = (rlimit *)malloc(sizeof(struct rlimit));
-        int rc = getrlimit(RLIMIT_CORE, limit);
-
-        if (rc == -1 || !((long)limit->rlim_cur > 0 || limit->rlim_cur == RLIM_INFINITY)) {
-# endif /* Q_OS_WIN */
-        signal(SIGABRT, handleSignal);
-        signal(SIGSEGV, handleSignal);
-# ifndef Q_OS_WIN
-        signal(SIGBUS, handleSignal);
-    }
-    free(limit);
-# endif /* Q_OS_WIN */
-#endif /* Q_OS_WIN || HAVE_EXECINFO */
-    }
-
-    instance()->_initialized = true;
     qsrand(QTime(0, 0, 0).secsTo(QTime::currentTime()));
 
+    instance()->setupSignalHandling();
     instance()->setupEnvironment();
     instance()->registerMetaTypes();
 
-    Network::setDefaultCodecForServer("ISO-8859-1");
+    instance()->_initialized = true;
+
+    Network::setDefaultCodecForServer("UTF-8");
     Network::setDefaultCodecForEncoding("UTF-8");
     Network::setDefaultCodecForDecoding("ISO-8859-15");
 
@@ -116,48 +87,14 @@ bool Quassel::init()
         return false;
     }
 
-    // set up logging
-    if (Quassel::runMode() != Quassel::ClientOnly) {
-        if (isOptionSet("loglevel")) {
-            QString level = optionValue("loglevel");
-
-            if (level == "Debug")
-                setLogLevel(DebugLevel);
-            else if (level == "Info")
-                setLogLevel(InfoLevel);
-            else if (level == "Warning")
-                setLogLevel(WarningLevel);
-            else if (level == "Error")
-                setLogLevel(ErrorLevel);
-            else {
-                qWarning() << qPrintable(tr("Invalid log level %1; supported are Debug|Info|Warning|Error").arg(level));
-                return false;
-            }
-        }
-
-        QString logfilename = optionValue("logfile");
-        if (!logfilename.isEmpty()) {
-            instance()->_logFile.reset(new QFile{logfilename});
-            if (!logFile()->open(QIODevice::Append | QIODevice::Text)) {
-                qWarning() << "Could not open log file" << logfilename << ":" << logFile()->errorString();
-                instance()->_logFile.reset();
-            }
-        }
-#ifdef HAVE_SYSLOG
-        instance()->_logToSyslog = isOptionSet("syslog");
-#endif
-    }
-
-    return true;
+    // Don't keep a debug log on the core
+    return instance()->logger()->setup(runMode() != RunMode::CoreOnly);
 }
 
 
-void Quassel::destroy()
+Logger *Quassel::logger() const
 {
-    if (logFile()) {
-        logFile()->close();
-        instance()->_logFile.reset();
-    }
+    return _logger;
 }
 
 
@@ -168,12 +105,18 @@ void Quassel::registerQuitHandler(QuitHandler handler)
 
 void Quassel::quit()
 {
-    if (_quitHandlers.empty()) {
-        QCoreApplication::quit();
-    }
-    else {
-        for (auto &&handler : _quitHandlers) {
-            handler();
+    // Protect against multiple invocations (e.g. triggered by MainWin::closeEvent())
+    if (!_quitting) {
+        _quitting = true;
+        quInfo() << "Quitting...";
+        if (_quitHandlers.empty()) {
+            QCoreApplication::quit();
+        }
+        else {
+            // Note: We expect one of the registered handlers to call QCoreApplication::quit()
+            for (auto &&handler : _quitHandlers) {
+                handler();
+            }
         }
     }
 }
@@ -293,12 +236,13 @@ void Quassel::setupBuildInfo()
     // Check if we got a commit hash
     if (!QString(GIT_HEAD).isEmpty()) {
         buildInfo.commitHash = GIT_HEAD;
-        QDateTime date;
-        date.setTime_t(GIT_COMMIT_DATE);
-        buildInfo.commitDate = date.toString();
+        // Set to Unix epoch, wrapped as a string for backwards-compatibility
+        buildInfo.commitDate = QString::number(GIT_COMMIT_DATE);
     }
     else if (!QString(DIST_HASH).contains("Format")) {
         buildInfo.commitHash = DIST_HASH;
+        // Leave as Unix epoch if set as Unix epoch, but don't force this for
+        // backwards-compatibility with existing packaging/release tools that might set strings.
         buildInfo.commitDate = QString(DIST_DATE);
     }
 
@@ -348,42 +292,41 @@ const Quassel::BuildInfo &Quassel::buildInfo()
 }
 
 
-//! Signal handler for graceful shutdown.
-void Quassel::handleSignal(int sig)
+void Quassel::setupSignalHandling()
 {
-    switch (sig) {
-    case SIGTERM:
-    case SIGINT:
-        qWarning("%s", qPrintable(QString("Caught signal %1 - exiting.").arg(sig)));
-        instance()->quit();
-        break;
 #ifndef Q_OS_WIN
-// Windows does not support SIGHUP
-    case SIGHUP:
-        // Most applications use this as the 'configuration reload' command, e.g. nginx uses it for
-        // graceful reloading of processes.
-        quInfo() << "Caught signal" << SIGHUP << "- reloading configuration";
-        if (instance()->reloadConfig()) {
-            quInfo() << "Successfully reloaded configuration";
-        }
-        break;
+    _signalWatcher = new PosixSignalWatcher(this);
+#else
+    _signalWatcher = new WindowsSignalWatcher(this);
 #endif
-    case SIGABRT:
-    case SIGSEGV:
-#ifndef Q_OS_WIN
-    case SIGBUS:
-#endif
-        instance()->logBacktrace(instance()->coreDumpFileName());
-        exit(EXIT_FAILURE);
-    default:
-        ;
-    }
+    connect(_signalWatcher, SIGNAL(handleSignal(AbstractSignalWatcher::Action)), this, SLOT(handleSignal(AbstractSignalWatcher::Action)));
 }
 
 
-void Quassel::disableCrashHandler()
+void Quassel::handleSignal(AbstractSignalWatcher::Action action)
 {
-    instance()->_handleCrashes = false;
+    switch (action) {
+    case AbstractSignalWatcher::Action::Reload:
+        // Most applications use this as the 'configuration reload' command, e.g. nginx uses it for graceful reloading of processes.
+        if (!_reloadHandlers.empty()) {
+            quInfo() << "Reloading configuration";
+            if (reloadConfig()) {
+                quInfo() << "Successfully reloaded configuration";
+            }
+        }
+        break;
+    case AbstractSignalWatcher::Action::Terminate:
+        if (!_quitting) {
+            quit();
+        }
+        else {
+            quInfo() << "Already shutting down, ignoring signal";
+        }
+        break;
+    case AbstractSignalWatcher::Action::HandleCrash:
+        logBacktrace(instance()->coreDumpFileName());
+        exit(EXIT_FAILURE);
+    }
 }
 
 
@@ -413,45 +356,6 @@ QString Quassel::optionValue(const QString &key)
 bool Quassel::isOptionSet(const QString &key)
 {
     return instance()->_cliParser ? instance()->_cliParser->isSet(key) : false;
-}
-
-
-Quassel::LogLevel Quassel::logLevel()
-{
-    return instance()->_logLevel;
-}
-
-
-void Quassel::setLogLevel(LogLevel logLevel)
-{
-    instance()->_logLevel = logLevel;
-}
-
-
-QFile *Quassel::logFile() {
-    return instance()->_logFile.get();
-}
-
-
-bool Quassel::logToSyslog()
-{
-    return instance()->_logToSyslog;
-}
-
-
-void Quassel::logFatalMessage(const char *msg)
-{
-#ifdef Q_OS_MAC
-    Q_UNUSED(msg)
-#else
-    QFile dumpFile(instance()->coreDumpFileName());
-    dumpFile.open(QIODevice::Append);
-    QTextStream dumpStream(&dumpFile);
-
-    dumpStream << "Fatal: " << msg << '\n';
-    dumpStream.flush();
-    dumpFile.close();
-#endif
 }
 
 
@@ -503,6 +407,8 @@ QString Quassel::configDirPath()
 #endif /* Q_OS_MAC */
     }
 
+    path = QFileInfo{path}.absoluteFilePath();
+
     if (!path.endsWith(QDir::separator()) && !path.endsWith('/'))
         path += QDir::separator();
 
@@ -515,7 +421,6 @@ QString Quassel::configDirPath()
     }
 
     instance()->_configDirPath = path;
-
     return path;
 }
 
@@ -720,7 +625,13 @@ bool Quassel::Features::isEnabled(Feature feature) const
 
 QStringList Quassel::Features::toStringList(bool enabled) const
 {
+    // Check if any feature is enabled
+    if (!enabled && std::all_of(_features.cbegin(), _features.cend(), [](bool feature) { return !feature; })) {
+        return QStringList{} << "NoFeatures";
+    }
+
     QStringList result;
+
     // TODO Qt5: Use QMetaEnum::fromType()
     auto featureEnum = Quassel::staticMetaObject.enumerator(Quassel::staticMetaObject.indexOfEnumerator("Feature"));
     for (quint32 i = 0; i < _features.size(); ++i) {

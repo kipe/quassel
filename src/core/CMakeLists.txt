@@ -12,7 +12,6 @@ set(SOURCES
     corebuffersyncer.cpp
     corebufferviewconfig.cpp
     corebufferviewmanager.cpp
-    corecoreinfo.cpp
     coredccconfig.cpp
     corehighlightrulemanager.cpp
     coreidentity.cpp
@@ -31,6 +30,7 @@ set(SOURCES
     coreusersettings.cpp
     ctcpparser.cpp
     eventstringifier.cpp
+    identserver.cpp
     ircparser.cpp
     netsplit.cpp
     oidentdconfiggenerator.cpp

@@ -18,8 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CHATMONITORFILTER_H_
-#define CHATMONITORFILTER_H_
+#pragma once
 
 #include <QDateTime>
 
@@ -55,6 +54,7 @@ public slots:
 private slots:
     void showFieldsSettingChanged(const QVariant &newValue);
     void showOwnMessagesSettingChanged(const QVariant &newValue);
+    void alwaysOwnSettingChanged(const QVariant &newValue);
     void showHighlightsSettingChanged(const QVariant &newValue);
     void operationModeSettingChanged(const QVariant &newValue);
     void buffersSettingChanged(const QVariant &newValue);
@@ -70,6 +70,7 @@ private slots:
 private:
     int _showFields;
     bool _showOwnMessages;
+    bool _alwaysOwn;
     QList<BufferId> _bufferIds;
     bool _showHighlights;
     int _operationMode;
@@ -77,6 +78,3 @@ private:
     bool _includeRead;
     bool _showSenderBrackets;   /// If true, show brackets around sender names
 };
-
-
-#endif

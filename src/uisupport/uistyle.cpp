@@ -23,9 +23,9 @@
 
 #include <QApplication>
 #include <QColor>
-#include <QIcon>
 
 #include "buffersettings.h"
+#include "icon.h"
 #include "qssparser.h"
 #include "quassel.h"
 #include "uistyle.h"
@@ -36,7 +36,7 @@ QHash<QString, UiStyle::FormatType> UiStyle::_formatCodes;
 bool UiStyle::_useCustomTimestampFormat;       /// If true, use the custom timestamp format
 QString UiStyle::_timestampFormatString;       /// Timestamp format
 QString UiStyle::_systemTimestampFormatString; /// Cached copy of system locale timestamp format
-bool UiStyle::_showSenderPrefixes;             /// If true, show prefixmodes before sender names
+UiStyle::SenderPrefixMode UiStyle::_senderPrefixDisplay; /// Display of prefix modes before sender
 bool UiStyle::_showSenderBrackets;             /// If true, show brackets around sender names
 
 namespace {
@@ -62,16 +62,16 @@ QColor extendedMircColor(int number)
 }
 
 UiStyle::UiStyle(QObject *parent)
-    : QObject(parent),
-    _channelJoinedIcon(QIcon::fromTheme("irc-channel-joined", QIcon(":/icons/irc-channel-joined.png"))),
-    _channelPartedIcon(QIcon::fromTheme("irc-channel-parted", QIcon(":/icons/irc-channel-parted.png"))),
-    _userOfflineIcon(QIcon::fromTheme("im-user-offline", QIcon::fromTheme("user-offline", QIcon(":/icons/im-user-offline.png")))),
-    _userOnlineIcon(QIcon::fromTheme("im-user", QIcon::fromTheme("user-available", QIcon(":/icons/im-user.png")))), // im-user-* are non-standard oxygen extensions
-    _userAwayIcon(QIcon::fromTheme("im-user-away", QIcon::fromTheme("user-away", QIcon(":/icons/im-user-away.png")))),
-    _categoryOpIcon(QIcon::fromTheme("irc-operator")),
-    _categoryVoiceIcon(QIcon::fromTheme("irc-voice")),
-    _opIconLimit(UserCategoryItem::categoryFromModes("o")),
-    _voiceIconLimit(UserCategoryItem::categoryFromModes("v"))
+    : QObject(parent)
+    , _channelJoinedIcon{icon::get("irc-channel-active")}
+    , _channelPartedIcon{icon::get("irc-channel-inactive")}
+    , _userOfflineIcon{icon::get({"im-user-offline", "user-offline"})}
+    , _userOnlineIcon{icon::get({"im-user-online", "im-user", "user-available"})}
+    , _userAwayIcon{icon::get({"im-user-away", "user-away"})}
+    , _categoryOpIcon{icon::get("irc-operator")}
+    , _categoryVoiceIcon{icon::get("irc-voice")}
+    , _opIconLimit{UserCategoryItem::categoryFromModes("o")}
+    , _voiceIconLimit{UserCategoryItem::categoryFromModes("v")}
 {
     static bool registered = []() {
         qRegisterMetaType<FormatList>();
@@ -100,8 +100,8 @@ UiStyle::UiStyle(QObject *parent)
     // in there.
     setUseCustomTimestampFormat(false);
     setTimestampFormatString(" hh:mm:ss");
-    enableSenderPrefixes(false);
-    enableSenderBrackets(true);
+    setSenderPrefixDisplay(UiStyle::SenderPrefixMode::HighestMode);
+    enableSenderBrackets(false);
 
     // BufferView / NickView settings
     UiStyleSettings s;
@@ -222,7 +222,7 @@ void UiStyle::updateSystemTimestampFormat()
     // Helpful interactive website for debugging and explaining:  https://regex101.com/
     const QRegExp regExpMatchAMPM(".*(\\b|_)(A|AP)(\\b|_).*", Qt::CaseInsensitive);
 
-    if (regExpMatchAMPM.exactMatch(QLocale::system().timeFormat(QLocale::ShortFormat))) {
+    if (regExpMatchAMPM.exactMatch(QLocale().timeFormat(QLocale::ShortFormat))) {
         // AM/PM style used
         _systemTimestampFormatString = " h:mm:ss ap";
     } else {
@@ -251,10 +251,10 @@ void UiStyle::setTimestampFormatString(const QString &format)
     }
 }
 
-void UiStyle::enableSenderPrefixes(bool enabled)
+void UiStyle::setSenderPrefixDisplay(UiStyle::SenderPrefixMode mode)
 {
-    if (_showSenderPrefixes != enabled) {
-        _showSenderPrefixes = enabled;
+    if (_senderPrefixDisplay != mode) {
+        _senderPrefixDisplay = mode;
     }
 }
 
@@ -475,7 +475,7 @@ QTextCharFormat UiStyle::format(const Format &format, MessageLabel label) const
 
     // Merge all formats except mIRC and extended colors
     mergeFormat(charFormat, format, label & 0xffff0000);  // keep nickhash in label
-    for (quint32 mask = 0x00000001; mask <= static_cast<quint32>(MessageLabel::Selected); mask <<= 1) {
+    for (quint32 mask = 0x00000001; mask <= static_cast<quint32>(MessageLabel::Last); mask <<= 1) {
         if (static_cast<quint32>(label) & mask) {
             mergeFormat(charFormat, format, label & (mask | 0xffff0000));
         }
@@ -485,7 +485,7 @@ QTextCharFormat UiStyle::format(const Format &format, MessageLabel label) const
     // unless the AllowForegroundOverride or AllowBackgroundOverride properties are set (via stylesheet).
     if (_allowMircColors) {
         mergeColors(charFormat, format, MessageLabel::None);
-        for (quint32 mask = 0x00000001; mask <= static_cast<quint32>(MessageLabel::Selected); mask <<= 1) {
+        for (quint32 mask = 0x00000001; mask <= static_cast<quint32>(MessageLabel::Last); mask <<= 1) {
             if (static_cast<quint32>(label) & mask) {
                 mergeColors(charFormat, format, label & mask);
             }
@@ -1058,8 +1058,18 @@ QString UiStyle::StyledMessage::plainSender() const
 QString UiStyle::StyledMessage::decoratedSender() const
 {
     QString _senderPrefixes;
-    if (_showSenderPrefixes) {
+    switch (_senderPrefixDisplay) {
+    case UiStyle::SenderPrefixMode::AllModes:
+        // Show every available mode
         _senderPrefixes = senderPrefixes();
+        break;
+    case UiStyle::SenderPrefixMode::HighestMode:
+        // Show the highest available mode (left-most)
+        _senderPrefixes = senderPrefixes().left(1);
+        break;
+    case UiStyle::SenderPrefixMode::NoModes:
+        // Don't show any mode (already empty by default)
+        break;
     }
 
     switch (type()) {

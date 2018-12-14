@@ -47,6 +47,7 @@ public:
 public slots:
     void save();
     void load();
+    void bufferList_Open(NetworkId);
 
 private slots:
     void widgetHasChanged();
@@ -57,6 +58,16 @@ private slots:
 
     void displayNetwork(NetworkId);
     void setItemState(NetworkId, QListWidgetItem *item = 0);
+
+    /**
+     * Reset the capability-dependent settings to the default unknown states
+     *
+     * For example, this updates the SASL text to indicate the status is unknown.  Any actual
+     * information should be set by setNetworkCapStates()
+     *
+     * @see NetworksSettingsPage::setNetworkCapStates()
+     */
+    void resetNetworkCapStates();
 
     /**
      * Update the capability-dependent settings according to what the server supports

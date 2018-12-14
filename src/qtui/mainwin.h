@@ -50,8 +50,9 @@ class NickListWidget;
 class SystemTray;
 class TopicWidget;
 
-class QMenu;
 class QLabel;
+class QMenu;
+class QMessageBox;
 class QToolBar;
 
 class KHelpMenu;
@@ -67,7 +68,6 @@ class MainWin
 
 public:
     MainWin(QWidget *parent = 0);
-    virtual ~MainWin();
 
     void init();
 
@@ -97,8 +97,9 @@ public slots:
     void nextBuffer();
     void previousBuffer();
 
-    //! Quit application
-    void quit();
+    void showMigrationWarning(bool show);
+
+    void onExitRequested(const QString &reason);
 
 protected:
     void closeEvent(QCloseEvent *event);
@@ -118,7 +119,18 @@ private slots:
     void currentBufferChanged(BufferId);
     void messagesInserted(const QModelIndex &parent, int start, int end);
     void showAboutDlg();
-    void showChannelList(NetworkId netId = NetworkId());
+
+    /**
+     * Show the channel list dialog for the network, optionally searching by channel name
+     *
+     * @param networkId        Network ID for associated network
+     * @param channelFilters   Partial channel name to search for, or empty to show all
+     * @param listImmediately  If true, immediately list channels, otherwise just show dialog
+     */
+    void showChannelList(NetworkId netId = {}, const QString &channelFilters = {},
+                         bool listImmediately = false);
+
+    void showNetworkConfig(NetworkId netId = NetworkId());
     void showCoreConnectionDlg();
     void showCoreConfigWizard(const QVariantList &, const QVariantList &);
     void showCoreInfoDlg();
@@ -131,6 +143,8 @@ private slots:
     void showNewTransferDlg(const QUuid &transferId);
     void onFullScreenToggled();
 
+    void doAutoConnect();
+
     void handleCoreConnectionError(const QString &errorMsg);
     void userAuthenticationRequired(CoreAccount *, bool *valid, const QString &errorMessage);
     void handleNoSslInClient(bool *accepted);
@@ -142,6 +156,49 @@ private slots:
     void on_actionConfigureNetworks_triggered();
     void on_actionConfigureViews_triggered();
     void on_actionLockLayout_toggled(bool lock);
+
+    /**
+     * Apply the active color to the input widget selected or typed text
+     *
+     * @seealso InputWidget::applyFormatActiveColor()
+     */
+    void on_inputFormatApplyColor_triggered();
+
+    /**
+     * Apply the active fill color to the input widget selected or typed text background
+     *
+     * @seealso InputWidget::applyFormatActiveColorFill()
+     */
+    void on_inputFormatApplyColorFill_triggered();
+
+    /**
+     * Toggle the boldness of the input widget selected or typed text
+     *
+     * @seealso InputWidget::toggleFormatBold()
+     */
+    void on_inputFormatBold_triggered();
+
+    /**
+     * Toggle the italicness of the input widget selected or typed text
+     *
+     * @seealso InputWidget::toggleFormatItalic()
+     */
+    void on_inputFormatItalic_triggered();
+
+    /**
+     * Toggle the underlining of the input widget selected or typed text
+     *
+     * @seealso InputWidget::toggleFormatUnderline()
+     */
+    void on_inputFormatUnderline_triggered();
+
+    /**
+     * Clear the formatting of the input widget selected or typed text
+     *
+     * @seealso InputWidget::clearFormat()
+     */
+    void on_inputFormatClear_triggered();
+
     void on_jumpHotBuffer_triggered();
     void on_bufferSearch_triggered();
     void on_actionDebugNetworkModel_triggered();
@@ -216,6 +273,8 @@ private:
     QToolBar *_mainToolBar, *_chatViewToolBar, *_nickToolBar;
 
     QWidget *_awayLog;
+
+    QMessageBox* _migrationWarning{nullptr};
 
     bool _layoutLoaded;
 

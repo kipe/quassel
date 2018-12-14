@@ -59,16 +59,16 @@ class OidentdConfigGenerator : public QObject
 {
     Q_OBJECT
 public:
-    /**
-     * @param strict If false, any identity a user chooses is reported to servers as authoritative.
-     *               If true, the user's quassel username is always reported.
-     */
-    explicit OidentdConfigGenerator(bool strict = false, QObject *parent = 0);
+    explicit OidentdConfigGenerator(QObject *parent = 0);
     ~OidentdConfigGenerator();
 
 public slots:
-    bool addSocket(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort);
-    bool removeSocket(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort);
+    bool addSocket(const CoreIdentity *identity, const QHostAddress &localAddress,
+                   quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort,
+                   qint64 socketId);
+    bool removeSocket(const CoreIdentity *identity, const QHostAddress &localAddress,
+                      quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort,
+                      qint64 socketId);
 
 private:
     QString sysIdentForIdentity(const CoreIdentity *identity) const;

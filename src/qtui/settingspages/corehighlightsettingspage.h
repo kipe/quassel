@@ -49,17 +49,29 @@ public slots:
 private slots:
     void coreConnectionStateChanged(bool state);
     void widgetHasChanged();
-    void addNewHighlightRow(bool enable = true, const QString &name = tr("highlight rule"), bool regex = false,
+    void addNewHighlightRow(bool enable = true, int id = -1, const QString &name = tr("highlight rule"), bool regex = false,
                             bool cs = false, const QString &sender = "", const QString &chanName = "",
                             bool self = false);
-    void addNewIgnoredRow(bool enable = true, const QString &name = tr("highlight rule"), bool regex = false,
+    void addNewIgnoredRow(bool enable = true, int id = -1, const QString &name = tr("highlight rule"), bool regex = false,
                           bool cs = false, const QString &sender = "", const QString &chanName = "", bool self = false);
     void removeSelectedHighlightRows();
     void removeSelectedIgnoredRows();
+    void highlightNicksChanged(int index);
     void selectHighlightRow(QTableWidgetItem *item);
     void selectIgnoredRow(QTableWidgetItem *item);
     void highlightTableChanged(QTableWidgetItem *item);
     void ignoredTableChanged(QTableWidgetItem *item);
+
+    /** Import local Highlight rules into the Core Highlight rules
+     *
+     * Iterates through all local highlight rules, converting each into core-side highlight rules.
+     */
+    void importRules();
+
+    /**
+     * Event handler for core unspported Details button
+     */
+    void on_coreUnsupportedDetails_clicked();
 
 private:
     Ui::CoreHighlightSettingsPage ui;
@@ -82,7 +94,51 @@ private:
 
     void setupRuleTable(QTableWidget *highlightTable) const;
 
-    void importRules();
+    /**
+     * Get tooltip for the specified rule table column
+     *
+     * @param tableColumn Column to retrieve tooltip
+     * @return Translated tooltip for the specified column
+     */
+    QString getTableTooltip(column tableColumn) const;
+
+    /**
+     * Setup tooltips and "What's this?" prompts for table entries
+     *
+     * @param enableWidget  Enabled checkbox
+     * @param nameWidget    Rule name
+     * @param regExWidget   RegEx enabled
+     * @param csWidget      Case-sensitive
+     * @param senderWidget  Sender name
+     * @param chanWidget    Channel name
+     */
+    void setupTableTooltips(QWidget *enableWidget, QWidget *nameWidget, QWidget *regExWidget,
+                            QWidget *csWidget, QWidget *senderWidget, QWidget *chanWidget) const;
+
+    /**
+     * Setup tooltips and "What's this?" prompts for table entries
+     *
+     * @param enableWidget  Enabled checkbox
+     * @param nameWidget    Rule name
+     * @param regExWidget   RegEx enabled
+     * @param csWidget      Case-sensitive
+     * @param senderWidget  Sender name
+     * @param chanWidget    Channel name
+     */
+    void setupTableTooltips(QTableWidgetItem *enableWidget, QTableWidgetItem *nameWidget,
+                            QTableWidgetItem *regExWidget, QTableWidgetItem *csWidget,
+                            QTableWidgetItem *senderWidget, QTableWidgetItem *chanWidget) const;
+
+    /** Update the UI to show core support for highlights
+     *
+     * Shows or hides the UI warnings around core-side highlights according to core connection and
+     * core feature support.
+     *
+     * @param state  True if connected to core, otherwise false
+     */
+    void updateCoreSupportStatus(bool state);
+
+    int nextId();
 
     bool _initialized;
 };

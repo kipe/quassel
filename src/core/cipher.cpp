@@ -13,7 +13,7 @@
 */
 
 #include "cipher.h"
-#include "logger.h"
+#include "logmessage.h"
 
 Cipher::Cipher()
 {
@@ -56,7 +56,8 @@ bool Cipher::setKey(QByteArray key)
 //    if(Preferences::self()->encryptionType())
 //      m_cbc = true;
 //    else
-        m_cbc = false;
+//    default to CBC
+        m_cbc = true;
         m_key = key;
     }
     return true;
@@ -117,7 +118,6 @@ QByteArray Cipher::decrypt(QByteArray cipherText)
     // (if cbc and no error we parse cbc) || (if ecb and error we parse cbc)
     if ((m_cbc && !error) || (!m_cbc && error))
     {
-        cipherText = cipherText;
         temp = blowfishCBC(cipherText, false);
 
         if (temp == cipherText)

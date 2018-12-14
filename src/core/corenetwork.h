@@ -57,7 +57,8 @@ class CoreNetwork : public Network
 
 public:
     CoreNetwork(const NetworkId &networkid, CoreSession *session);
-    ~CoreNetwork();
+    virtual ~CoreNetwork();
+
     inline virtual const QMetaObject *syncMetaObject() const { return &Network::staticMetaObject; }
 
     inline CoreIdentity *identityPtr() const { return coreSession()->identity(identity()); }
@@ -90,7 +91,16 @@ public:
     inline QByteArray readChannelCipherKey(const QString &channel) const { return _cipherKeys.value(channel.toLower()); }
     inline void storeChannelCipherKey(const QString &channel, const QByteArray &key) { _cipherKeys[channel.toLower()] = key; }
 
-    inline bool isAutoWhoInProgress(const QString &channel) const { return _autoWhoPending.value(channel.toLower(), 0); }
+    /**
+     * Checks if the given target has an automatic WHO in progress
+     *
+     * @param name Channel or nickname
+     * @return True if an automatic WHO is in progress, otherwise false
+     */
+    inline bool isAutoWhoInProgress(const QString &name) const
+    {
+        return _autoWhoPending.value(name.toLower(), 0);
+    }
 
     inline UserId userId() const { return _coreSession->user(); }
 
@@ -109,6 +119,25 @@ public:
      * @return True if disconnect was requested, otherwise false.
      */
     inline bool disconnectExpected() const { return _disconnectExpected; }
+
+    /**
+     * Gets whether or not the server replies to automated PINGs with a valid timestamp
+     *
+     * Distinguishes between servers that reply by quoting the text sent, and those that respond
+     * with whatever they want.
+     *
+     * @return True if a valid timestamp has been received as a PONG, otherwise false.
+     */
+    inline bool isPongTimestampValid() const { return _pongTimestampValid; }
+
+    /**
+     * Gets whether or not an automated PING has been sent without any PONG received
+     *
+     * Reset whenever any PONG is received, not just the automated one sent.
+     *
+     * @return True if a PING has been sent without a PONG received, otherwise false.
+     */
+    inline bool isPongReplyPending() const { return _pongReplyPending; }
 
     QList<QList<QByteArray>> splitMessage(const QString &cmd, const QString &message, std::function<QList<QByteArray>(QString &)> cmdGenerator);
 
@@ -190,6 +219,24 @@ public slots:
 
     void setPingInterval(int interval);
 
+    /**
+     * Sets whether or not the IRC server has replied to PING with a valid timestamp
+     *
+     * This allows determining whether or not an IRC server responds to PING with a PONG that quotes
+     * what was sent, or if it does something else (and therefore PONGs should be more aggressively
+     * hidden).
+     *
+     * @param timestampValid If true, a valid timestamp has been received via PONG reply
+     */
+    void setPongTimestampValid(bool validTimestamp);
+
+    /**
+     * Indicates that the CoreSession is shutting down.
+     *
+     * Disconnects the network if connected, and sets a flag that prevents reconnections.
+     */
+    void shutdown();
+
     void connectToIrc(bool reconnecting = false);
     /**
      * Disconnect from the IRC server.
@@ -199,16 +246,14 @@ public slots:
      * @param requested       If true, user requested this disconnect; don't try to reconnect
      * @param reason          Reason for quitting, defaulting to the user-configured quit reason
      * @param withReconnect   Reconnect to the network after disconnecting (e.g. ping timeout)
-     * @param forceImmediate  Immediately disconnect from network, skipping queue of other commands
      */
-    void disconnectFromIrc(bool requested = true, const QString &reason = QString(),
-                           bool withReconnect = false, bool forceImmediate = false);
+    void disconnectFromIrc(bool requested = true, const QString &reason = QString(), bool withReconnect = false);
 
     /**
      * Forcibly close the IRC server socket, waiting for it to close.
      *
      * Call CoreNetwork::disconnectFromIrc() first, allow the event loop to run, then if you need to
-     * be sure the network's disconencted (e.g. clean-up), call this.
+     * be sure the network's disconnected (e.g. clean-up), call this.
      *
      * @param msecs  Maximum time to wait for socket to close, in milliseconds.
      * @return True if socket closes successfully; false if error occurs or timeout reached
@@ -358,11 +403,17 @@ public slots:
      * When 'away-notify' is enabled, this will trigger an immediate AutoWho since regular
      * who-cycles are disabled as per IRCv3 specifications.
      *
-     * @param[in] channelOrNick Channel or nickname to WHO
+     * @param[in] name Channel or nickname
      */
-    void queueAutoWhoOneshot(const QString &channelOrNick);
+    void queueAutoWhoOneshot(const QString &name);
 
-    bool setAutoWhoDone(const QString &channel);
+    /**
+     * Checks if the given target has an automatic WHO in progress, and sets it as done if so
+     *
+     * @param name Channel or nickname
+     * @return True if an automatic WHO is in progress (and should be silenced), otherwise false
+     */
+    bool setAutoWhoDone(const QString &name);
 
     void updateIssuedModes(const QString &requestedModes);
     void updatePersistentModes(QString addModes, QString removeModes);
@@ -371,6 +422,11 @@ public slots:
     Server usedServer() const;
 
     inline void resetPingTimeout() { _pingCount = 0; }
+
+    /**
+     * Marks the network as no longer having a pending reply to an automated PING
+     */
+    inline void resetPongReplyPending() { _pongReplyPending = false; }
 
     inline void displayMsg(Message::Type msgType, BufferInfo::Type bufferType, const QString &target, const QString &text, const QString &sender = "", Message::Flags flags = Message::None)
     {
@@ -389,8 +445,8 @@ signals:
     void sslErrors(const QVariant &errorData);
 
     void newEvent(Event *event);
-    void socketInitialized(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort);
-    void socketDisconnected(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort);
+    void socketInitialized(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort, qint64 socketId);
+    void socketDisconnected(const CoreIdentity *identity, const QHostAddress &localAddress, quint16 localPort, const QHostAddress &peerAddress, quint16 peerPort, qint64 socketId);
 
 protected:
     inline virtual IrcChannel *ircChannelFactory(const QString &channelname) { return new CoreIrcChannel(channelname, this); }
@@ -406,7 +462,7 @@ private slots:
     void socketHasData();
     void socketError(QAbstractSocket::SocketError);
     void socketInitialized();
-    inline void socketCloseTimeout() { socket.abort(); }
+    void socketCloseTimeout();
     void socketDisconnected();
     void socketStateChanged(QAbstractSocket::SocketState);
     void networkInitialized();
@@ -448,11 +504,15 @@ private slots:
 private:
     CoreSession *_coreSession;
 
+    bool _debugLogRawIrc;     ///< If true, include raw IRC socket messages in the debug log
+    qint32 _debugLogRawNetId; ///< Network ID for logging raw IRC socket messages, or -1 for all
+
 #ifdef HAVE_SSL
     QSslSocket socket;
 #else
     QTcpSocket socket;
 #endif
+    qint64 _socketId{0};
 
     CoreUserInputHandler *_userInputHandler;
 
@@ -473,13 +533,19 @@ private:
     // This avoids logging a spurious RemoteHostClosedError whenever disconnect is called without
     // specifying a permanent (saved to core session) disconnect.
 
+    bool _shuttingDown{false};  ///< If true, we're shutting down and ignore requests to (dis)connect networks
+
     bool _previousConnectionAttemptFailed;
     int _lastUsedServerIndex;
 
     QTimer _pingTimer;
-    uint _lastPingTime;
-    uint _pingCount;
-    bool _sendPings;
+    qint64 _lastPingTime = 0;          ///< Unix time of most recently sent automatic ping
+    uint _pingCount = 0;               ///< Unacknowledged automatic pings
+    bool _sendPings = false;           ///< If true, pings should be periodically sent to server
+    bool _pongTimestampValid = false;  ///< If true, IRC server responds to PING by quoting in PONG
+    // This tracks whether or not a server responds to PING with a PONG of what was sent, or if it
+    // does something else.  If false, PING reply hiding should be more aggressive.
+    bool _pongReplyPending = false;    ///< If true, at least one PING sent without a PONG reply
 
     QStringList _autoWhoQueue;
     QHash<QString, int> _autoWhoPending;

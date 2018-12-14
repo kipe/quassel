@@ -55,88 +55,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-QPointer<Client> Client::instanceptr = 0;
-
-/*** Initialization/destruction ***/
-
-bool Client::instanceExists()
-{
-    return instanceptr;
-}
-
-
-Client *Client::instance()
-{
-    if (!instanceptr)
-        instanceptr = new Client();
-    return instanceptr;
-}
-
-
-void Client::destroy()
-{
-    if (instanceptr) {
-        delete instanceptr->mainUi();
-        instanceptr->deleteLater();
-        instanceptr = 0;
-    }
-}
-
-
-void Client::init(AbstractUi *ui)
-{
-    instance()->_mainUi = ui;
-    instance()->init();
-}
-
-
-Client::Client(QObject *parent)
-    : QObject(parent),
+Client::Client(std::unique_ptr<AbstractUi> ui, QObject *parent)
+    : QObject(parent), Singleton<Client>(this),
     _signalProxy(new SignalProxy(SignalProxy::Client, this)),
-    _mainUi(0),
-    _networkModel(0),
-    _bufferModel(0),
+    _mainUi(std::move(ui)),
+    _networkModel(new NetworkModel(this)),
+    _bufferModel(new BufferModel(_networkModel)),
     _bufferSyncer(0),
     _aliasManager(0),
     _backlogManager(new ClientBacklogManager(this)),
     _bufferViewManager(0),
     _bufferViewOverlay(new BufferViewOverlay(this)),
+    _coreInfo(new CoreInfo(this)),
     _dccConfig(0),
     _ircListHelper(new ClientIrcListHelper(this)),
-    _inputHandler(0),
+    _inputHandler(new ClientUserInputHandler(this)),
     _networkConfig(0),
     _ignoreListManager(0),
     _highlightRuleManager(0),
     _transferManager(0),
     _transferModel(new TransferModel(this)),
-    _messageModel(0),
-    _messageProcessor(0),
+    _messageModel(_mainUi->createMessageModel(this)),
+    _messageProcessor(_mainUi->createMessageProcessor(this)),
     _coreAccountModel(new CoreAccountModel(this)),
     _coreConnection(new CoreConnection(this)),
-    _connected(false),
-    _debugLog(&_debugLogBuffer)
+    _connected(false)
 {
-    _signalProxy->synchronize(_ircListHelper);
-}
+    //connect(mainUi(), SIGNAL(connectToCore(const QVariantMap &)), this, SLOT(connectToCore(const QVariantMap &)));
+    connect(mainUi(), SIGNAL(disconnectFromCore()), this, SLOT(disconnectFromCore()));
+    connect(this, SIGNAL(connected()), mainUi(), SLOT(connectedToCore()));
+    connect(this, SIGNAL(disconnected()), mainUi(), SLOT(disconnectedFromCore()));
 
+    connect(this, SIGNAL(networkRemoved(NetworkId)), _networkModel, SLOT(networkRemoved(NetworkId)));
+    connect(this, SIGNAL(networkRemoved(NetworkId)), _messageProcessor, SLOT(networkRemoved(NetworkId)));
 
-Client::~Client()
-{
-    disconnectFromCore();
-}
-
-
-void Client::init()
-{
-    _networkModel = new NetworkModel(this);
-
-    connect(this, SIGNAL(networkRemoved(NetworkId)),
-        _networkModel, SLOT(networkRemoved(NetworkId)));
-
-    _bufferModel = new BufferModel(_networkModel);
-    _messageModel = mainUi()->createMessageModel(this);
-    _messageProcessor = mainUi()->createMessageProcessor(this);
-    _inputHandler = new ClientUserInputHandler(this);
+    connect(backlogManager(), SIGNAL(messagesReceived(BufferId, int)), _messageModel, SLOT(messagesReceived(BufferId, int)));
+    connect(coreConnection(), SIGNAL(stateChanged(CoreConnection::ConnectionState)), SLOT(connectionStateChanged(CoreConnection::ConnectionState)));
 
     SignalProxy *p = signalProxy();
 
@@ -163,27 +117,24 @@ void Client::init()
     p->attachSignal(this, SIGNAL(requestKickClient(int)), SIGNAL(kickClient(int)));
     p->attachSlot(SIGNAL(disconnectFromCore()), this, SLOT(disconnectFromCore()));
 
-    //connect(mainUi(), SIGNAL(connectToCore(const QVariantMap &)), this, SLOT(connectToCore(const QVariantMap &)));
-    connect(mainUi(), SIGNAL(disconnectFromCore()), this, SLOT(disconnectFromCore()));
-    connect(this, SIGNAL(connected()), mainUi(), SLOT(connectedToCore()));
-    connect(this, SIGNAL(disconnected()), mainUi(), SLOT(disconnectedFromCore()));
-
-    // attach backlog manager
     p->synchronize(backlogManager());
-    connect(backlogManager(), SIGNAL(messagesReceived(BufferId, int)), _messageModel, SLOT(messagesReceived(BufferId, int)));
+    p->synchronize(coreInfo());
+    p->synchronize(_ircListHelper);
 
     coreAccountModel()->load();
-
-    connect(coreConnection(), SIGNAL(stateChanged(CoreConnection::ConnectionState)), SLOT(connectionStateChanged(CoreConnection::ConnectionState)));
     coreConnection()->init();
 }
 
 
-/*** public static methods ***/
+Client::~Client()
+{
+    disconnectFromCore();
+}
+
 
 AbstractUi *Client::mainUi()
 {
-    return instance()->_mainUi;
+    return instance()->_mainUi.get();
 }
 
 
@@ -202,6 +153,22 @@ bool Client::isConnected()
 bool Client::internalCore()
 {
     return currentCoreAccount().isInternal();
+}
+
+
+void Client::onDbUpgradeInProgress(bool inProgress)
+{
+    emit dbUpgradeInProgress(inProgress);
+}
+
+
+void Client::onExitRequested(int exitCode, const QString &reason)
+{
+    if (!reason.isEmpty()) {
+        qCritical() << reason;
+        emit exitRequested(reason);
+    }
+    QCoreApplication::exit(exitCode);
 }
 
 
@@ -394,6 +361,7 @@ void Client::setSyncedToCore()
     connect(bufferSyncer(), SIGNAL(buffersPermanentlyMerged(BufferId, BufferId)), _messageModel, SLOT(buffersPermanentlyMerged(BufferId, BufferId)));
     connect(bufferSyncer(), SIGNAL(bufferMarkedAsRead(BufferId)), SIGNAL(bufferMarkedAsRead(BufferId)));
     connect(bufferSyncer(), SIGNAL(bufferActivityChanged(BufferId, const Message::Types)), _networkModel, SLOT(bufferActivityChanged(BufferId, const Message::Types)));
+    connect(bufferSyncer(), SIGNAL(highlightCountChanged(BufferId, int)), _networkModel, SLOT(highlightCountChanged(BufferId, int)));
     connect(networkModel(), SIGNAL(requestSetLastSeenMsg(BufferId, MsgId)), bufferSyncer(), SLOT(requestSetLastSeenMsg(BufferId, const MsgId &)));
 
     SignalProxy *p = signalProxy();
@@ -424,6 +392,9 @@ void Client::setSyncedToCore()
     Q_ASSERT(!_highlightRuleManager);
     _highlightRuleManager = new HighlightRuleManager(this);
     p->synchronize(highlightRuleManager());
+    // Listen to network removed events
+    connect(this, SIGNAL(networkRemoved(NetworkId)),
+        _highlightRuleManager, SLOT(networkRemoved(NetworkId)));
 
 /*  not ready yet
     // create TransferManager and DccConfig if core supports them
@@ -460,14 +431,37 @@ void Client::finishConnectionInitialization()
     disconnect(bufferSyncer(), SIGNAL(initDone()), this, SLOT(finishConnectionInitialization()));
 
     requestInitialBacklog();
-    if (isCoreFeatureEnabled(Quassel::Feature::BufferActivitySync))
+    if (isCoreFeatureEnabled(Quassel::Feature::BufferActivitySync)) {
         bufferSyncer()->markActivitiesChanged();
+        bufferSyncer()->markHighlightCountsChanged();
+    }
 }
 
 
 void Client::requestInitialBacklog()
 {
     _backlogManager->requestInitialBacklog();
+}
+
+
+void Client::requestLegacyCoreInfo()
+{
+    // On older cores, the CoreInfo object was only synchronized on demand.  Synchronize now if
+    // needed.
+    if (isConnected() && !isCoreFeatureEnabled(Quassel::Feature::SyncedCoreInfo)) {
+        // Delete the existing core info object (it will always exist as client is single-threaded)
+        _coreInfo->deleteLater();
+        // No need to set to null when creating new one immediately after
+
+        // Create a fresh, unsynchronized CoreInfo object, emulating legacy behavior of CoreInfo not
+        // persisting
+        _coreInfo = new CoreInfo(this);
+        // Synchronize the new object
+        signalProxy()->synchronize(_coreInfo);
+
+        // Let others know signal handlers have been reset
+        emit coreInfoResynchronized();
+    }
 }
 
 
@@ -496,6 +490,8 @@ void Client::setDisconnectedFromCore()
         _bufferSyncer->deleteLater();
         _bufferSyncer = 0;
     }
+
+    _coreInfo->reset();
 
     if (_bufferViewManager) {
         _bufferViewManager->deleteLater();
@@ -691,6 +687,12 @@ void Client::markBufferAsRead(BufferId id)
 }
 
 
+void Client::refreshLegacyCoreInfo()
+{
+    instance()->requestLegacyCoreInfo();
+}
+
+
 void Client::changePassword(const QString &oldPassword, const QString &newPassword) {
     CoreAccount account = currentCoreAccount();
     account.setPassword(newPassword);
@@ -711,48 +713,3 @@ void Client::corePasswordChanged(PeerPtr, bool success)
         coreAccountModel()->save();
     emit passwordChanged(success);
 }
-
-
-#if QT_VERSION < 0x050000
-void Client::logMessage(QtMsgType type, const char *msg)
-{
-    fprintf(stderr, "%s\n", msg);
-    fflush(stderr);
-    if (type == QtFatalMsg) {
-        Quassel::logFatalMessage(msg);
-    }
-    else {
-        QString msgString = QString("%1\n").arg(msg);
-
-        //Check to see if there is an instance around, else we risk recursions
-        //when calling instance() and creating new ones.
-        if (!instanceExists())
-            return;
-
-        instance()->_debugLog << msgString;
-        emit instance()->logUpdated(msgString);
-    }
-}
-#else
-void Client::logMessage(QtMsgType type, const QMessageLogContext &context, const QString &msg)
-{
-    Q_UNUSED(context);
-
-    fprintf(stderr, "%s\n", msg.toLocal8Bit().constData());
-    fflush(stderr);
-    if (type == QtFatalMsg) {
-        Quassel::logFatalMessage(msg.toLocal8Bit().constData());
-    }
-    else {
-        QString msgString = QString("%1\n").arg(msg);
-
-        //Check to see if there is an instance around, else we risk recursions
-        //when calling instance() and creating new ones.
-        if (!instanceExists())
-            return;
-
-        instance()->_debugLog << msgString;
-        emit instance()->logUpdated(msgString);
-    }
-}
-#endif
