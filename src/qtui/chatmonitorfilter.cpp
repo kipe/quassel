@@ -137,10 +137,7 @@ QVariant ChatMonitorFilter::data(const QModelIndex& index, int role) const
     Message::Type messageType = (Message::Type)source_index.data(MessageModel::TypeRole).toInt();
     if (messageType & (Message::Plain | Message::Notice)) {
         QString sender = MessageFilter::data(index, ChatLineModel::EditRole).toString();
-        // If buffer name is shown and sender matcher buffer name, this is a private message
-        // -> don't repeat the stuff un-necessarily
-        if ((_showFields & BufferField) && sender != Client::networkModel()->bufferName(bufid))
-            fields << sender;
+        fields << sender;
     }
     if (_showSenderBrackets)
         return QString("<%1>").arg(fields.join(":"));

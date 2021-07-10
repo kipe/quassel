@@ -571,7 +571,6 @@ void BufferView::hideCurrentBuffer()
     config()->requestRemoveBuffer(bufferId);
 }
 
-
 void BufferView::filterTextChanged(const QString& filterString)
 {
     auto* filter = qobject_cast<BufferViewFilter*>(model());

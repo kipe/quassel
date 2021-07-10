@@ -54,7 +54,7 @@ NetworkItem::NetworkItem(const NetworkId& netid, AbstractTreeItem* parent)
 
 QStringList NetworkItem::propertyOrder() const
 {
-    static auto order = QStringList() << "networkName" << "currentServer" << "nickCount";
+    static QStringList order{"networkName", "currentServer", "nickCount"};
     return order;
 }
 
@@ -272,7 +272,7 @@ BufferItem::BufferItem(BufferInfo bufferInfo, AbstractTreeItem* parent)
 
 QStringList BufferItem::propertyOrder() const
 {
-    static auto order = QStringList() << "bufferName" << "topic" << "nickCount";
+    static QStringList order{"bufferName", "topic", "nickCount"};
     return order;
 }
 
