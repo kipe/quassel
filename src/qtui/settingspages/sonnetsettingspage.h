@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,18 +30,18 @@ class SonnetSettingsPage : public SettingsPage
     Q_OBJECT
 
 public:
-    SonnetSettingsPage(QWidget *parent = 0);
+    SonnetSettingsPage(QWidget* parent = nullptr);
 
-    bool hasDefaults() const;
+    bool hasDefaults() const override;
 
 public slots:
-    void save();
-    void load();
-    void defaults();
+    void save() override;
+    void load() override;
+    void defaults() override;
 
 private slots:
     void widgetHasChanged();
 
 private:
-    Sonnet::ConfigWidget *_configWidget;
+    Sonnet::ConfigWidget* _configWidget;
 };

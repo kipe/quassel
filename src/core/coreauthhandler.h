@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,11 +18,12 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef COREAUTHHANDLER_H
-#define COREAUTHHANDLER_H
+#pragma once
 
 #include "authhandler.h"
+#include "metricsserver.h"
 #include "peerfactory.h"
+#include "proxyline.h"
 #include "remotepeer.h"
 #include "types.h"
 
@@ -31,19 +32,22 @@ class CoreAuthHandler : public AuthHandler
     Q_OBJECT
 
 public:
-    CoreAuthHandler(QTcpSocket *socket, QObject *parent = 0);
+    CoreAuthHandler(QSslSocket* socket, QObject* parent = nullptr);
+
+    QHostAddress hostAddress() const;
+    bool isLocal() const override;
 
 signals:
-    void handshakeComplete(RemotePeer *peer, UserId uid);
+    void handshakeComplete(RemotePeer* peer, UserId uid);
 
 private:
     using AuthHandler::handle;
 
-    void handle(const Protocol::RegisterClient &msg);
-    void handle(const Protocol::SetupData &msg);
-    void handle(const Protocol::Login &msg);
+    void handle(const Protocol::RegisterClient& msg) override;
+    void handle(const Protocol::SetupData& msg) override;
+    void handle(const Protocol::Login& msg) override;
 
-    void setPeer(RemotePeer *peer);
+    void setPeer(RemotePeer* peer);
     void startSsl();
 
     bool checkClientRegistered();
@@ -51,21 +55,21 @@ private:
 private slots:
     void onReadyRead();
 
-#ifdef HAVE_SSL
     void onSslErrors();
-#endif
 
     // only in legacy mode
     void onProtocolVersionMismatch(int actual, int expected);
 
 private:
-    RemotePeer *_peer;
+    RemotePeer* _peer;
+    MetricsServer* _metricsServer;
 
+    bool _proxyReceived;
+    ProxyLine _proxyLine;
+    bool _useProxyLine;
     bool _magicReceived;
     bool _legacy;
     bool _clientRegistered;
     quint8 _connectionFeatures;
     QVector<PeerFactory::ProtoDescriptor> _supportedProtos;
 };
-
-#endif

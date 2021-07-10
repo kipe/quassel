@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,74 +18,81 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include "execwrapper.h"
+
 #include <QFile>
 #include <QTextCodec>
-
-#include "execwrapper.h"
+#include <QRegularExpression>
 
 #include "client.h"
 #include "messagemodel.h"
 #include "quassel.h"
+#include "util.h"
 
-ExecWrapper::ExecWrapper(QObject *parent) : QObject(parent)
+ExecWrapper::ExecWrapper(QObject* parent)
+    : QObject(parent)
 {
-    connect(&_process, SIGNAL(readyReadStandardOutput()), SLOT(processReadStdout()));
-    connect(&_process, SIGNAL(readyReadStandardError()), SLOT(processReadStderr()));
-    connect(&_process, SIGNAL(finished(int, QProcess::ExitStatus)), SLOT(processFinished(int, QProcess::ExitStatus)));
-    connect(&_process, SIGNAL(error(QProcess::ProcessError)), SLOT(processError(QProcess::ProcessError)));
+    connect(&_process, &QProcess::readyReadStandardOutput, this, &ExecWrapper::processReadStdout);
+    connect(&_process, &QProcess::readyReadStandardError, this, &ExecWrapper::processReadStderr);
+    connect(&_process, selectOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &ExecWrapper::processFinished);
+#if QT_VERSION < QT_VERSION_CHECK(5, 6, 0)
+    connect(&_process, selectOverload<QProcess::ProcessError>(&QProcess::error), this, &ExecWrapper::processError);
+#else
+    connect(&_process, &QProcess::errorOccurred, this, &ExecWrapper::processError);
+#endif
 
-    connect(this, SIGNAL(output(QString)), SLOT(postStdout(QString)));
-    connect(this, SIGNAL(error(QString)), SLOT(postStderr(QString)));
+    connect(this, &ExecWrapper::output, this, &ExecWrapper::postStdout);
+    connect(this, &ExecWrapper::error, this, &ExecWrapper::postStderr);
 }
 
-
-void ExecWrapper::start(const BufferInfo &info, const QString &command)
+void ExecWrapper::start(const BufferInfo& info, const QString& command)
 {
     _bufferInfo = info;
-    QString params;
+    _scriptName.clear();
 
-    QRegExp rx("^\\s*(\\S+)(\\s+(.*))?$");
-    if (!rx.exactMatch(command)) {
+    QStringList params;
+
+    static const QRegularExpression rx{R"(^\s*(\S+)(\s+(.*))?$)"};
+    auto match = rx.match(command);
+    if (!match.hasMatch()) {
         emit error(tr("Invalid command string for /exec: %1").arg(command));
     }
     else {
-        _scriptName = rx.cap(1);
-        params = rx.cap(3);
+        _scriptName = match.captured(1);
+        static const QRegularExpression splitRx{"\\s+"};
+        params = match.captured(3).split(splitRx, QString::SkipEmptyParts);
     }
 
     // Make sure we don't execute something outside a script dir
-    if (_scriptName.contains("../") || _scriptName.contains("..\\"))
-        emit error(tr("Name \"%1\" is invalid: ../ or ..\\ are not allowed!").arg(_scriptName));
-
-    else {
-        foreach(QString scriptDir, Quassel::scriptDirPaths()) {
+    if (_scriptName.contains("../") || _scriptName.contains("..\\")) {
+        emit error(tr(R"(Name "%1" is invalid: ../ or ..\ are not allowed!)").arg(_scriptName));
+    }
+    else if (!_scriptName.isEmpty()) {
+        foreach (QString scriptDir, Quassel::scriptDirPaths()) {
             QString fileName = scriptDir + _scriptName;
             if (!QFile::exists(fileName))
                 continue;
             _process.setWorkingDirectory(scriptDir);
-            _process.start('"' + fileName + "\" " + params);
+            _process.start(_scriptName, params);
             return;
         }
         emit error(tr("Could not find script \"%1\"").arg(_scriptName));
     }
 
-    deleteLater(); // self-destruct
+    deleteLater();  // self-destruct
 }
 
-
-void ExecWrapper::postStdout(const QString &msg)
+void ExecWrapper::postStdout(const QString& msg)
 {
     if (_bufferInfo.isValid())
         Client::userInput(_bufferInfo, msg);
 }
 
-
-void ExecWrapper::postStderr(const QString &msg)
+void ExecWrapper::postStderr(const QString& msg)
 {
     if (_bufferInfo.isValid())
         Client::messageModel()->insertErrorMessage(_bufferInfo, msg);
 }
-
 
 void ExecWrapper::processFinished(int exitCode, QProcess::ExitStatus status)
 {
@@ -95,15 +102,14 @@ void ExecWrapper::processFinished(int exitCode, QProcess::ExitStatus status)
 
     // empty buffers
     if (!_stdoutBuffer.isEmpty())
-        foreach(QString msg, _stdoutBuffer.split('\n'))
-        emit output(msg);
+        foreach (QString msg, _stdoutBuffer.split('\n'))
+            emit output(msg);
     if (!_stderrBuffer.isEmpty())
-        foreach(QString msg, _stderrBuffer.split('\n'))
-        emit error(msg);
+        foreach (QString msg, _stderrBuffer.split('\n'))
+            emit error(msg);
 
     deleteLater();
 }
-
 
 void ExecWrapper::processError(QProcess::ProcessError err)
 {
@@ -116,7 +122,6 @@ void ExecWrapper::processError(QProcess::ProcessError err)
         deleteLater();
 }
 
-
 void ExecWrapper::processReadStdout()
 {
     QString str = QTextCodec::codecForLocale()->toUnicode(_process.readAllStandardOutput());
@@ -128,7 +133,6 @@ void ExecWrapper::processReadStdout()
         _stdoutBuffer = _stdoutBuffer.mid(idx + 1);
     }
 }
-
 
 void ExecWrapper::processReadStderr()
 {

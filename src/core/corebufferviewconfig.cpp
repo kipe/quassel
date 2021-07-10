@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,15 +20,13 @@
 
 #include "corebufferviewconfig.h"
 
-INIT_SYNCABLE_OBJECT(CoreBufferViewConfig)
-CoreBufferViewConfig::CoreBufferViewConfig(int bufferViewId, QObject *parent)
+CoreBufferViewConfig::CoreBufferViewConfig(int bufferViewId, QObject* parent)
     : BufferViewConfig(bufferViewId, parent)
 {
     setAllowClientUpdates(true);
 }
 
-
-CoreBufferViewConfig::CoreBufferViewConfig(int bufferViewId, const QVariantMap &properties, QObject *parent)
+CoreBufferViewConfig::CoreBufferViewConfig(int bufferViewId, const QVariantMap& properties, QObject* parent)
     : BufferViewConfig(bufferViewId, properties, parent)
 {
     setAllowClientUpdates(true);

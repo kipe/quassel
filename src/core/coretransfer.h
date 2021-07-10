@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,23 +18,27 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CORETRANSFER_H
-#define CORETRANSFER_H
+#pragma once
 
 #include <QPointer>
 
-#include "transfer.h"
 #include "peer.h"
+#include "transfer.h"
 
 class QTcpSocket;
 
 class CoreTransfer : public Transfer
 {
     Q_OBJECT
-    SYNCABLE_OBJECT
 
 public:
-    CoreTransfer(Direction direction, const QString &nick, const QString &fileName, const QHostAddress &address, quint16 port, quint64 size = 0, QObject *parent = 0);
+    CoreTransfer(Direction direction,
+                 const QString& nick,
+                 const QString& fileName,
+                 const QHostAddress& address,
+                 quint16 port,
+                 quint64 size = 0,
+                 QObject* parent = nullptr);
 
     quint64 transferred() const override;
 
@@ -53,14 +57,12 @@ private slots:
 
 private:
     void setupConnectionForReceive();
-    bool relayData(const QByteArray &data, bool requireChunkSize);
+    bool relayData(const QByteArray& data, bool requireChunkSize);
     void cleanUp() override;
 
     QPointer<Peer> _peer;
-    QTcpSocket *_socket;
+    QTcpSocket* _socket;
     quint64 _pos;
     QByteArray _buffer;
     bool _reading;
 };
-
-#endif

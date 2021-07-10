@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,6 +22,7 @@
 #define INPUTLINESETTINGSPAGE_H_
 
 #include "settingspage.h"
+
 #include "ui_inputwidgetsettingspage.h"
 
 class InputWidgetSettingsPage : public SettingsPage
@@ -29,15 +30,14 @@ class InputWidgetSettingsPage : public SettingsPage
     Q_OBJECT
 
 public:
-    InputWidgetSettingsPage(QWidget *parent = 0);
+    InputWidgetSettingsPage(QWidget* parent = nullptr);
 
-    inline bool hasDefaults() const { return true; }
+    inline bool hasDefaults() const override { return true; }
 
 private:
     Ui::InputWidgetSettingsPage ui;
 
-    inline QString settingsKey() const { return QString("InputWidget"); }
+    inline QString settingsKey() const override { return QString("InputWidget"); }
 };
-
 
 #endif

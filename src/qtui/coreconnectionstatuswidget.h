@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,18 +23,18 @@
 
 #include <QWidget>
 
-#include "ui_coreconnectionstatuswidget.h"
-
 #include "coreconnection.h"
+
+#include "ui_coreconnectionstatuswidget.h"
 
 class CoreConnectionStatusWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    CoreConnectionStatusWidget(CoreConnection *connection, QWidget *parent = 0);
+    CoreConnectionStatusWidget(CoreConnection* connection, QWidget* parent = nullptr);
 
-    inline CoreConnection *coreConnection() const { return _coreConnection; }
+    inline CoreConnection* coreConnection() const { return _coreConnection; }
 
 public slots:
     void update();
@@ -47,8 +47,7 @@ private slots:
 private:
     Ui::CoreConnectionStatusWidget ui;
 
-    CoreConnection *_coreConnection;
+    CoreConnection* _coreConnection;
 };
 
-
-#endif // CORECONNECTIONSTATUSWIDGET_H
+#endif  // CORECONNECTIONSTATUSWIDGET_H

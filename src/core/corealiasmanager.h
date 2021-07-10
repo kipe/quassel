@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,8 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef COREALIASMANAGER_H
-#define COREALIASMANAGER_H
+#pragma once
 
 #include "aliasmanager.h"
 
@@ -27,16 +26,13 @@ class CoreSession;
 
 class CoreAliasManager : public AliasManager
 {
-    SYNCABLE_OBJECT
-        Q_OBJECT
+    Q_OBJECT
 
 public:
-    explicit CoreAliasManager(CoreSession *parent);
-
-    inline virtual const QMetaObject *syncMetaObject() const { return &AliasManager::staticMetaObject; }
+    explicit CoreAliasManager(CoreSession* parent);
 
 protected:
-    const Network *network(NetworkId) const;
+    const Network* network(NetworkId) const override;
 
 private slots:
     void save() const;
@@ -44,6 +40,3 @@ private slots:
 private:
     void loadDefaults();
 };
-
-
-#endif //COREALIASMANAGER_H

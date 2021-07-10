@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,14 +20,12 @@
 
 #include "clientbufferviewconfig.h"
 
-INIT_SYNCABLE_OBJECT(ClientBufferViewConfig)
-ClientBufferViewConfig::ClientBufferViewConfig(int bufferViewId, QObject *parent)
-    : BufferViewConfig(bufferViewId, parent),
-    _locked(false)
+ClientBufferViewConfig::ClientBufferViewConfig(int bufferViewId, QObject* parent)
+    : BufferViewConfig(bufferViewId, parent)
+    , _locked(false)
 {
-    connect(this, SIGNAL(initDone()), this, SLOT(ensureDecoration()));
+    connect(this, &SyncableObject::initDone, this, &ClientBufferViewConfig::ensureDecoration);
 }
-
 
 // currently we don't have a possibility to configure disableDecoration
 // if we have an old config this value can be true which is... bad.

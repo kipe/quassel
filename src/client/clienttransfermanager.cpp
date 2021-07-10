@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,17 +23,14 @@
 #include "client.h"
 #include "clienttransfer.h"
 
-INIT_SYNCABLE_OBJECT(ClientTransferManager)
-
-void ClientTransferManager::setTransferIds(const QList<QUuid> &transferIds)
+void ClientTransferManager::setTransferIds(const QList<QUuid>& transferIds)
 {
-    for(auto &&id : transferIds) {
+    for (auto&& id : transferIds) {
         onCoreTransferAdded(id);
     }
 }
 
-
-void ClientTransferManager::onCoreTransferAdded(const QUuid &uuid)
+void ClientTransferManager::onCoreTransferAdded(const QUuid& uuid)
 {
     if (uuid.isNull()) {
         qWarning() << Q_FUNC_INFO << "Invalid transfer uuid" << uuid.toString();
@@ -41,14 +38,13 @@ void ClientTransferManager::onCoreTransferAdded(const QUuid &uuid)
     }
 
     auto transfer = new ClientTransfer(uuid, this);
-    connect(transfer, SIGNAL(initDone()), SLOT(onTransferInitDone())); // we only want to add initialized transfers
+    connect(transfer, &SyncableObject::initDone, this, &ClientTransferManager::onTransferInitDone);  // we only want to add initialized transfers
     Client::signalProxy()->synchronize(transfer);
 }
 
-
 void ClientTransferManager::onTransferInitDone()
 {
-    Transfer *transfer = qobject_cast<Transfer *>(sender());
+    auto* transfer = qobject_cast<Transfer*>(sender());
     Q_ASSERT(transfer);
     addTransfer(transfer);
 }

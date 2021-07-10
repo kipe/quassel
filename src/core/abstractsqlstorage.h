@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,13 +20,18 @@
 
 #pragma once
 
+#include <memory>
+#include <vector>
+
+#include <QHash>
+#include <QMutex>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
+
 #include "storage.h"
 
-#include <memory>
-
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
+class QThread;
 
 class AbstractSqlMigrationReader;
 class AbstractSqlMigrationWriter;
@@ -36,22 +41,34 @@ class AbstractSqlStorage : public Storage
     Q_OBJECT
 
 public:
-    AbstractSqlStorage(QObject *parent = 0);
-    virtual ~AbstractSqlStorage();
+    AbstractSqlStorage(QObject* parent = nullptr);
+    ~AbstractSqlStorage() override;
 
     virtual std::unique_ptr<AbstractSqlMigrationReader> createMigrationReader() { return {}; }
     virtual std::unique_ptr<AbstractSqlMigrationWriter> createMigrationWriter() { return {}; }
 
+    /**
+     * An SQL query with associated resource filename
+     */
+    struct SqlQueryResource {
+        QString queryString;   ///< SQL query string
+        QString queryFilename; ///< Path to the resource file providing this query
+
+        SqlQueryResource(const QString& queryString, const QString& queryFilename)
+            : queryString(std::move(queryString)),
+              queryFilename(std::move(queryFilename)) {}
+    };
+
 public slots:
-    virtual State init(const QVariantMap &settings = QVariantMap(),
-                       const QProcessEnvironment &environment = {},
-                       bool loadFromEnvironment = false);
-    virtual bool setup(const QVariantMap &settings = QVariantMap(),
-                       const QProcessEnvironment &environment = {},
-                       bool loadFromEnvironment = false);
+    State init(const QVariantMap& settings = QVariantMap(),
+               const QProcessEnvironment& environment = {},
+               bool loadFromEnvironment = false) override;
+    bool setup(const QVariantMap& settings = QVariantMap(),
+               const QProcessEnvironment& environment = {},
+               bool loadFromEnvironment = false) override;
 
 protected:
-    inline virtual void sync() {};
+    inline void sync() override{};
 
     QSqlDatabase logDb();
 
@@ -72,23 +89,56 @@ protected:
      * @endparblock
      * @return String with the requested SQL query, ready for parameter substitution
      */
-    QString queryString(const QString &queryName, int version = 0);
+    QString queryString(const QString& queryName, int version = 0);
 
-    QStringList setupQueries();
+    /**
+     * Gets the collection of SQL setup queries and filenames to create a new database
+     *
+     * @return List of SQL query strings and filenames
+     */
+    std::vector<SqlQueryResource> setupQueries();
 
-    QStringList upgradeQueries(int ver);
+    /**
+     * Gets the collection of SQL upgrade queries and filenames for a given schema version
+     *
+     * @param ver  SQL schema version
+     * @return List of SQL query strings and filenames
+     */
+    std::vector<SqlQueryResource> upgradeQueries(int ver);
     bool upgradeDb();
 
-    bool watchQuery(QSqlQuery &query);
+    bool watchQuery(QSqlQuery& query);
 
     int schemaVersion();
     virtual int installedSchemaVersion() { return -1; };
-    virtual bool updateSchemaVersion(int newVersion) = 0;
+
+    /**
+     * Update the stored schema version number, optionally clearing the record of mid-schema steps
+     *
+     * @param newVersion        New schema version number
+     * @param clearUpgradeStep  If true, clear the record of any in-progress schema upgrades
+     * @return
+     */
+    virtual bool updateSchemaVersion(int newVersion, bool clearUpgradeStep = true) = 0;
+
     virtual bool setupSchemaVersion(int version) = 0;
 
-    virtual void setConnectionProperties(const QVariantMap &properties,
-                                         const QProcessEnvironment &environment,
-                                         bool loadFromEnvironment) = 0;
+    /**
+     * Gets the last successful schema upgrade step, or an empty string if no upgrade is in progress
+     *
+     * @return Filename of last successful schema upgrade query, or empty string if not upgrading
+     */
+    virtual QString schemaVersionUpgradeStep();
+
+    /**
+     * Sets the last successful schema upgrade step
+     *
+     * @param upgradeQuery  The filename of the last successful schema upgrade query
+     * @return True if successfully set, otherwise false
+     */
+    virtual bool setSchemaVersionUpgradeStep(QString upgradeQuery) = 0;
+
+    virtual void setConnectionProperties(const QVariantMap& properties, const QProcessEnvironment& environment, bool loadFromEnvironment) = 0;
     virtual QString driverName() = 0;
     inline virtual QString hostName() { return QString(); }
     inline virtual int port() { return -1; }
@@ -103,16 +153,16 @@ protected:
      *  When reimplementing this method, don't use logDB() inside this function as
      *  this would cause as we're just about to initialize that DB connection.
      */
-    inline virtual bool initDbSession(QSqlDatabase & /* db */) { return true; }
+    inline virtual bool initDbSession(QSqlDatabase& /* db */) { return true; }
 
 private slots:
     void connectionDestroyed();
 
 private:
     void addConnectionToPool();
-    void dbConnect(QSqlDatabase &db);
+    void dbConnect(QSqlDatabase& db);
 
-    int _schemaVersion;
+    int _schemaVersion{0};
     bool _debug;
 
     static int _nextConnectionId;
@@ -121,16 +171,17 @@ private:
     // those objects reside in the thread the connection belongs to
     // which allows us thread safe termination of a connection
     class Connection;
-    QHash<QThread *, Connection *> _connectionPool;
+    QHash<QThread*, Connection*> _connectionPool;
 };
 
-struct SenderData {
+struct SenderData
+{
     QString sender;
     QString realname;
     QString avatarurl;
 
-    friend uint qHash(const SenderData &key);
-    friend bool operator==(const SenderData &a, const SenderData &b);
+    friend uint qHash(const SenderData& key);
+    friend bool operator==(const SenderData& a, const SenderData& b);
 };
 
 // ========================================
@@ -141,15 +192,14 @@ class AbstractSqlStorage::Connection : public QObject
     Q_OBJECT
 
 public:
-    Connection(const QString &name, QObject *parent = 0);
-    ~Connection();
+    Connection(const QString& name, QObject* parent = nullptr);
+    ~Connection() override;
 
     inline QLatin1String name() const { return QLatin1String(_name); }
 
 private:
     QByteArray _name;
 };
-
 
 // ========================================
 //  AbstractSqlMigrator
@@ -158,7 +208,8 @@ class AbstractSqlMigrator
 {
 public:
     // migration objects
-    struct QuasselUserMO {
+    struct QuasselUserMO
+    {
         UserId id;
         QString username;
         QString password;
@@ -166,15 +217,16 @@ public:
         QString authenticator;
     };
 
-    struct SenderMO {
-        qint64 senderId;
+    struct SenderMO
+    {
+        qint64 senderId{0};
         QString sender;
         QString realname;
         QString avatarurl;
-        SenderMO() : senderId(0) {}
     };
 
-    struct IdentityMO {
+    struct IdentityMO
+    {
         IdentityId id;
         UserId userid;
         QString identityname;
@@ -198,13 +250,15 @@ public:
         QByteArray sslKey;
     };
 
-    struct IdentityNickMO {
+    struct IdentityNickMO
+    {
         int nickid;
         IdentityId identityId;
         QString nick;
     };
 
-    struct NetworkMO {
+    struct NetworkMO
+    {
         UserId userid;
         QString networkname;
         QString perform;
@@ -219,6 +273,7 @@ public:
         QString awaymessage;
         QString attachperform;
         QString detachperform;
+        QString skipcaps;
         NetworkId networkid;
         IdentityId identityid;
         int messagerateburstsize;
@@ -236,7 +291,8 @@ public:
         bool connected;
     };
 
-    struct BufferMO {
+    struct BufferMO
+    {
         BufferId bufferid;
         UserId userid;
         int groupid;
@@ -254,9 +310,10 @@ public:
         QString cipher;
     };
 
-    struct BacklogMO {
+    struct BacklogMO
+    {
         MsgId messageid;
-        QDateTime time; // has to be in UTC!
+        QDateTime time;  // has to be in UTC!
         BufferId bufferid;
         int type;
         int flags;
@@ -265,7 +322,8 @@ public:
         QString message;
     };
 
-    struct IrcServerMO {
+    struct IrcServerMO
+    {
         int serverid;
         UserId userid;
         NetworkId networkid;
@@ -273,7 +331,7 @@ public:
         int port;
         QString password;
         bool ssl;
-        bool sslverify;     /// If true, validate SSL certificates
+        bool sslverify;  /// If true, validate SSL certificates
         int sslversion;
         bool useproxy;
         int proxytype;
@@ -283,18 +341,21 @@ public:
         QString proxypass;
     };
 
-    struct UserSettingMO {
+    struct UserSettingMO
+    {
         UserId userid;
         QString settingname;
         QByteArray settingvalue;
     };
 
-    struct CoreStateMO {
+    struct CoreStateMO
+    {
         QString key;
         QByteArray value;
     };
 
-    enum MigrationObject {
+    enum MigrationObject
+    {
         QuasselUser,
         Sender,
         Identity,
@@ -307,20 +368,19 @@ public:
         CoreState
     };
 
-    AbstractSqlMigrator();
-    virtual ~AbstractSqlMigrator() {}
+    virtual ~AbstractSqlMigrator() = default;
 
     static QString migrationObject(MigrationObject moType);
 
 protected:
-    void newQuery(const QString &query, QSqlDatabase db);
+    void newQuery(const QString& query, QSqlDatabase db);
     virtual void resetQuery();
     virtual bool prepareQuery(MigrationObject mo) = 0;
     bool exec();
     inline bool next() { return _query->next(); }
     inline QVariant value(int index) { return _query->value(index); }
-    inline void bindValue(const QString &placeholder, const QVariant &val) { _query->bindValue(placeholder, val); }
-    inline void bindValue(int pos, const QVariant &val) { _query->bindValue(pos, val); }
+    inline void bindValue(const QString& placeholder, const QVariant& val) { _query->bindValue(placeholder, val); }
+    inline void bindValue(int pos, const QVariant& val) { _query->bindValue(pos, val); }
 
     inline QSqlError lastError() { return _query ? _query->lastError() : QSqlError(); }
     void dumpStatus();
@@ -332,53 +392,52 @@ protected:
     virtual bool commit() = 0;
 
 private:
-    QSqlQuery *_query;
+    QSqlQuery* _query{nullptr};
 };
-
 
 class AbstractSqlMigrationReader : public AbstractSqlMigrator
 {
 public:
     AbstractSqlMigrationReader();
 
-    virtual bool readMo(QuasselUserMO &user) = 0;
-    virtual bool readMo(IdentityMO &identity) = 0;
-    virtual bool readMo(IdentityNickMO &identityNick) = 0;
-    virtual bool readMo(NetworkMO &network) = 0;
-    virtual bool readMo(BufferMO &buffer) = 0;
-    virtual bool readMo(SenderMO &sender) = 0;
-    virtual bool readMo(BacklogMO &backlog) = 0;
-    virtual bool readMo(IrcServerMO &ircserver) = 0;
-    virtual bool readMo(UserSettingMO &userSetting) = 0;
-    virtual bool readMo(CoreStateMO &coreState) = 0;
+    virtual bool readMo(QuasselUserMO& user) = 0;
+    virtual bool readMo(IdentityMO& identity) = 0;
+    virtual bool readMo(IdentityNickMO& identityNick) = 0;
+    virtual bool readMo(NetworkMO& network) = 0;
+    virtual bool readMo(BufferMO& buffer) = 0;
+    virtual bool readMo(SenderMO& sender) = 0;
+    virtual bool readMo(BacklogMO& backlog) = 0;
+    virtual bool readMo(IrcServerMO& ircserver) = 0;
+    virtual bool readMo(UserSettingMO& userSetting) = 0;
+    virtual bool readMo(CoreStateMO& coreState) = 0;
 
-    bool migrateTo(AbstractSqlMigrationWriter *writer);
+    bool migrateTo(AbstractSqlMigrationWriter* writer);
 
 private:
-    void abortMigration(const QString &errorMsg = QString());
+    void abortMigration(const QString& errorMsg = QString());
     bool finalizeMigration();
 
-    template<typename T> bool transferMo(MigrationObject moType, T &mo);
+    template<typename T>
+    bool transferMo(MigrationObject moType, T& mo);
 
-    AbstractSqlMigrationWriter *_writer;
+    AbstractSqlMigrationWriter* _writer{nullptr};
 };
-
 
 class AbstractSqlMigrationWriter : public AbstractSqlMigrator
 {
 public:
-    virtual bool writeMo(const QuasselUserMO &user) = 0;
-    virtual bool writeMo(const IdentityMO &identity) = 0;
-    virtual bool writeMo(const IdentityNickMO &identityNick) = 0;
-    virtual bool writeMo(const NetworkMO &network) = 0;
-    virtual bool writeMo(const BufferMO &buffer) = 0;
-    virtual bool writeMo(const SenderMO &sender) = 0;
-    virtual bool writeMo(const BacklogMO &backlog) = 0;
-    virtual bool writeMo(const IrcServerMO &ircserver) = 0;
-    virtual bool writeMo(const UserSettingMO &userSetting) = 0;
-    virtual bool writeMo(const CoreStateMO &coreState) = 0;
+    virtual bool writeMo(const QuasselUserMO& user) = 0;
+    virtual bool writeMo(const IdentityMO& identity) = 0;
+    virtual bool writeMo(const IdentityNickMO& identityNick) = 0;
+    virtual bool writeMo(const NetworkMO& network) = 0;
+    virtual bool writeMo(const BufferMO& buffer) = 0;
+    virtual bool writeMo(const SenderMO& sender) = 0;
+    virtual bool writeMo(const BacklogMO& backlog) = 0;
+    virtual bool writeMo(const IrcServerMO& ircserver) = 0;
+    virtual bool writeMo(const UserSettingMO& userSetting) = 0;
+    virtual bool writeMo(const CoreStateMO& coreState) = 0;
 
-    inline bool migrateFrom(AbstractSqlMigrationReader *reader) { return reader->migrateTo(this); }
+    inline bool migrateFrom(AbstractSqlMigrationReader* reader) { return reader->migrateTo(this); }
 
     // called after migration process
     virtual inline bool postProcess() { return true; }

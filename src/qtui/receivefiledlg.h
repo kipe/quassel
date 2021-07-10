@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,14 +30,14 @@ class ReceiveFileDlg : public QDialog
     Q_OBJECT
 
 public:
-    ReceiveFileDlg(const Transfer *transfer, QWidget *parent = 0);
+    ReceiveFileDlg(const Transfer* transfer, QWidget* parent = nullptr);
 
 private slots:
-    void on_buttonBox_clicked(QAbstractButton *button);
+    void on_buttonBox_clicked(QAbstractButton* button);
 
 private:
     Ui::ReceiveFileDlg ui;
-    const Transfer *_transfer;
+    const Transfer* _transfer;
 };
 
 #endif

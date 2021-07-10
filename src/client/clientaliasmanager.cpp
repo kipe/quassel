@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,14 +22,11 @@
 
 #include "client.h"
 
-INIT_SYNCABLE_OBJECT(ClientAliasManager)
-ClientAliasManager::ClientAliasManager(QObject *parent)
+ClientAliasManager::ClientAliasManager(QObject* parent)
     : AliasManager(parent)
-{
-}
+{}
 
-
-const Network *ClientAliasManager::network(NetworkId id) const
+const Network* ClientAliasManager::network(NetworkId id) const
 {
     return Client::network(id);
 }

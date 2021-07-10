@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -19,23 +19,17 @@
  ***************************************************************************/
 
 #include "abstractbuffercontainer.h"
+
 #include "client.h"
 #include "clientbacklogmanager.h"
 #include "networkmodel.h"
 
-AbstractBufferContainer::AbstractBufferContainer(QWidget *parent)
-    : AbstractItemView(parent),
-    _currentBuffer(0)
-{
-}
+AbstractBufferContainer::AbstractBufferContainer(QWidget* parent)
+    : AbstractItemView(parent)
+    , _currentBuffer(0)
+{}
 
-
-AbstractBufferContainer::~AbstractBufferContainer()
-{
-}
-
-
-void AbstractBufferContainer::rowsAboutToBeRemoved(const QModelIndex &parent, int start, int end)
+void AbstractBufferContainer::rowsAboutToBeRemoved(const QModelIndex& parent, int start, int end)
 {
     Q_ASSERT(model());
     if (!parent.isValid()) {
@@ -45,15 +39,19 @@ void AbstractBufferContainer::rowsAboutToBeRemoved(const QModelIndex &parent, in
         if (model()->rowCount(parent) != end - start + 1)
             return;
 
-        foreach(BufferId id, _chatViews.keys()) {
+        foreach (BufferId id, _chatViews.keys()) {
             removeChatView(id);
         }
         _chatViews.clear();
     }
     else {
         // check if there are explicitly buffers removed
+        // Make sure model is valid first
+        if (!parent.model()) {
+            return;
+        }
         for (int i = start; i <= end; i++) {
-            QVariant variant = parent.child(i, 0).data(NetworkModel::BufferIdRole);
+            QVariant variant = parent.model()->index(i, 0, parent).data(NetworkModel::BufferIdRole);
             if (!variant.isValid())
                 continue;
 
@@ -63,7 +61,6 @@ void AbstractBufferContainer::rowsAboutToBeRemoved(const QModelIndex &parent, in
     }
 }
 
-
 void AbstractBufferContainer::removeBuffer(BufferId bufferId)
 {
     if (!_chatViews.contains(bufferId))
@@ -72,7 +69,6 @@ void AbstractBufferContainer::removeBuffer(BufferId bufferId)
     removeChatView(bufferId);
     _chatViews.take(bufferId);
 }
-
 
 /*
   Switching to first buffer is now handled in MainWin::clientNetworkUpdated()
@@ -93,7 +89,7 @@ void AbstractBufferContainer::rowsInserted(const QModelIndex &parent, int start,
 }
 */
 
-void AbstractBufferContainer::currentChanged(const QModelIndex &current, const QModelIndex &previous)
+void AbstractBufferContainer::currentChanged(const QModelIndex& current, const QModelIndex& previous)
 {
     Q_UNUSED(previous)
 
@@ -105,7 +101,6 @@ void AbstractBufferContainer::currentChanged(const QModelIndex &current, const Q
         emit currentChanged(current);
     }
 }
-
 
 void AbstractBufferContainer::setCurrentBuffer(BufferId bufferId)
 {

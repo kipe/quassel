@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>@BUNDLE_NAME@</string>
+	<key>CFBundleGetInfoString</key>
+	<string>Quassel IRC Client</string>
+	<key>CFBundleIconFile</key>
+	<string>quassel.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.quassel-irc.client</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Quassel IRC Client</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@QUASSEL_MAJOR@.@QUASSEL_MINOR@.@QUASSEL_PATCH@</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>@QUASSEL_MAJOR@.@QUASSEL_MINOR@.@QUASSEL_PATCH@</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>@QMAKE_MACOSX_DEPLOYMENT_TARGET@</string>
+	<key>LSRequiresCarbon</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2005-2020, Quassel IRC Team</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+</dict>
+</plist>

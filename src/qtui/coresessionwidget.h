@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -24,12 +24,12 @@
 
 #include "ui_coresessionwidget.h"
 
-class CoreSessionWidget: public QWidget
+class CoreSessionWidget : public QWidget
 {
-Q_OBJECT
+    Q_OBJECT
 
 public:
-    explicit CoreSessionWidget(QWidget *);
+    explicit CoreSessionWidget(QWidget*);
 
     void setData(QMap<QString, QVariant>);
 
@@ -37,7 +37,7 @@ signals:
     void disconnectClicked(int);
 
 private slots:
-    void disconnectClicked();
+    void onDisconnectClicked();
 
 private:
     Ui::CoreSessionWidget ui;

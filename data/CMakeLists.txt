@@ -1,5 +1,9 @@
 if (BUILD_GUI)
-    if (KDE4_FOUND OR (UNIX AND NOT APPLE))
+    if (WITH_KF5)
+        install(FILES quassel.notifyrc DESTINATION ${CMAKE_INSTALL_KNOTIFY5RCDIR})
+    endif()
+
+    if (UNIX AND NOT APPLE)
         if (WANT_QTCLIENT)
             install(FILES quasselclient.desktop DESTINATION ${CMAKE_INSTALL_APPDIR})
         endif()
@@ -7,18 +11,13 @@ if (BUILD_GUI)
         if (WANT_MONO)
             install(FILES quassel.desktop DESTINATION ${CMAKE_INSTALL_APPDIR})
         endif()
-
-        if (WITH_KDE4)
-            install(FILES quassel.notifyrc DESTINATION ${CMAKE_INSTALL_DATADIR}/quassel)
-        endif()
-
-        if (WITH_KF5)
-            install(FILES quassel.notifyrc DESTINATION ${CMAKE_INSTALL_KNOTIFY5RCDIR})
-        endif()
     endif()
 
     if (EMBED_DATA)
-        set(CLIENT_RCS ${CLIENT_RCS} ${CMAKE_CURRENT_SOURCE_DIR}/data.qrc PARENT_SCOPE)
+        quassel_add_resource(Data PREFIX data PATTERNS
+            networks.ini
+            stylesheets/default.qss
+        )
     else()
         install(FILES networks.ini DESTINATION ${CMAKE_INSTALL_DATADIR}/quassel)
         install(DIRECTORY stylesheets DESTINATION ${CMAKE_INSTALL_DATADIR}/quassel)

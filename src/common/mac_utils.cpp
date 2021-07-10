@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -28,11 +28,11 @@ QString CFStringToQString(CFStringRef str)
         return QString();
 
     CFIndex length = CFStringGetLength(str);
-    const UniChar *chars = CFStringGetCharactersPtr(str);
+    const UniChar* chars = CFStringGetCharactersPtr(str);
     if (chars)
-        return QString(reinterpret_cast<const QChar *>(chars), length);
+        return QString(reinterpret_cast<const QChar*>(chars), length);
 
     QVarLengthArray<UniChar> buffer(length);
     CFStringGetCharacters(str, CFRangeMake(0, length), buffer.data());
-    return QString(reinterpret_cast<const QChar *>(buffer.constData()), length);
+    return QString(reinterpret_cast<const QChar*>(buffer.constData()), length);
 }

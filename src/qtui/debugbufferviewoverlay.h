@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -32,25 +32,24 @@ class DebugBufferViewOverlay : public QWidget
     Q_OBJECT
 
 public:
-    DebugBufferViewOverlay(QWidget *parent = 0);
+    DebugBufferViewOverlay(QWidget* parent = nullptr);
 
 private slots:
     void update();
 
 private:
     Ui::DebugBufferViewOverlay ui;
-    QLineEdit *_bufferViews;
-    QLabel *_allNetworks;
-    QLineEdit *_networks;
-    QTextEdit *_bufferIds;
-    QTextEdit *_removedBufferIds;
-    QTextEdit *_tempRemovedBufferIds;
-    QLabel *_addBuffersAutomatically;
-    QLabel *_hideInactiveBuffers;
-    QLabel *_allowedBufferTypes;
-    QLabel *_minimumActivity;
-    QLabel *_isInitialized;
+    QLineEdit* _bufferViews;
+    QLabel* _allNetworks;
+    QLineEdit* _networks;
+    QTextEdit* _bufferIds;
+    QTextEdit* _removedBufferIds;
+    QTextEdit* _tempRemovedBufferIds;
+    QLabel* _addBuffersAutomatically;
+    QLabel* _hideInactiveBuffers;
+    QLabel* _allowedBufferTypes;
+    QLabel* _minimumActivity;
+    QLabel* _isInitialized;
 };
 
-
-#endif //DEBUGBUFFERVIEWOVERLAY_H
+#endif  // DEBUGBUFFERVIEWOVERLAY_H

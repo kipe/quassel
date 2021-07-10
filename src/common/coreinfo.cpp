@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,15 +20,16 @@
 
 #include "coreinfo.h"
 
-INIT_SYNCABLE_OBJECT(CoreInfo)
-CoreInfo::CoreInfo(QObject *parent) : SyncableObject(parent) {}
+CoreInfo::CoreInfo(QObject* parent)
+    : SyncableObject(parent)
+{}
 
 QVariantMap CoreInfo::coreData() const
 {
     return _coreData;
 }
 
-void CoreInfo::setCoreData(const QVariantMap &coreData)
+void CoreInfo::setCoreData(const QVariantMap& coreData)
 {
     _coreData = coreData;
     SYNC(ARG(coreData));

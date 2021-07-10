@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -39,36 +39,36 @@ class ChatView : public QGraphicsView, public AbstractChatView
     Q_OBJECT
 
 public:
-    ChatView(MessageFilter *, QWidget *parent = 0);
-    ChatView(BufferId bufferId, QWidget *parent = 0);
+    ChatView(MessageFilter*, QWidget* parent = nullptr);
+    ChatView(BufferId bufferId, QWidget* parent = nullptr);
 
-    virtual MsgId lastMsgId() const;
+    MsgId lastMsgId() const override;
     virtual MsgId lastVisibleMsgId() const;
-    inline AbstractBufferContainer *bufferContainer() const { return _bufferContainer; }
-    inline void setBufferContainer(AbstractBufferContainer *c) { _bufferContainer = c; }
+    inline AbstractBufferContainer* bufferContainer() const { return _bufferContainer; }
+    inline void setBufferContainer(AbstractBufferContainer* c) { _bufferContainer = c; }
 
-    inline ChatScene *scene() const { return _scene; }
+    inline ChatScene* scene() const { return _scene; }
 
     //! Return a set of ChatLines currently visible in the view
     /** \param mode How partially visible ChatLines are handled
      *  \return A set of visible ChatLines
      */
-    QSet<ChatLine *> visibleChatLines(Qt::ItemSelectionMode mode = Qt::ContainsItemBoundingRect) const;
+    QSet<ChatLine*> visibleChatLines(Qt::ItemSelectionMode mode = Qt::ContainsItemBoundingRect) const;
 
     //! Return a sorted list of ChatLines currently visible in the view
     /** \param mode How partially visible ChatLines are handled
      *  \return A list of visible ChatLines sorted by row
      *  \note If the order of ChatLines does not matter, use visibleChatLines() instead
      */
-    QList<ChatLine *> visibleChatLinesSorted(Qt::ItemSelectionMode mode = Qt::ContainsItemBoundingRect) const;
+    QList<ChatLine*> visibleChatLinesSorted(Qt::ItemSelectionMode mode = Qt::ContainsItemBoundingRect) const;
 
     //! Return the last fully visible ChatLine in this view
     /** Using this method more efficient than calling visibleChatLinesSorted() and taking its last element.
      *  \return The last fully visible ChatLine in the view
      */
-    ChatLine *lastVisibleChatLine(bool ignoreDayChange = false) const;
+    ChatLine* lastVisibleChatLine(bool ignoreDayChange = false) const;
 
-    virtual void addActionsToMenu(QMenu *, const QPointF &pos);
+    virtual void addActionsToMenu(QMenu*, const QPointF& pos);
 
     //! Tell the view that this ChatLine has cached data
     /** ChatLines cache some layout data that should be cleared as soon as it's no
@@ -77,7 +77,18 @@ public:
      *  appropriate.
      *  \param line The ChatLine having cached data
      */
-    void setHasCache(ChatLine *line, bool hasCache = true);
+    void setHasCache(ChatLine* line, bool hasCache = true);
+
+    /**
+     * Requests backlog if the scrollbar is not currently visible
+     *
+     * Use this whenever trying to scroll the backlog to try to ensure some text is visible.  If the
+     * backlog does not have additional messages or those messages are filtered out, the scrollbar
+     * might remain invisible.
+     *
+     * @return True if the scrollbar isn't visible and a backlog request was made, otherwise false
+     */
+    bool requestBacklogForScroll();
 
 public slots:
     inline virtual void clear() {}
@@ -90,35 +101,37 @@ public slots:
     void jumpToMarkerLine(bool requestBacklog);
 
 protected:
-    virtual bool event(QEvent *event);
-    virtual void resizeEvent(QResizeEvent *event);
-    virtual void scrollContentsBy(int dx, int dy);
+    bool event(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void scrollContentsBy(int dx, int dy) override;
 
 protected slots:
     virtual void verticalScrollbarChanged(int);
 
 private slots:
-    void lastLineChanged(QGraphicsItem *chatLine, qreal offset);
+    void lastLineChanged(QGraphicsItem* chatLine, qreal offset);
     void adjustSceneRect();
     void checkChatLineCaches();
-    void mouseMoveWhileSelecting(const QPointF &scenePos);
+    void mouseMoveWhileSelecting(const QPointF& scenePos);
     void scrollTimerTimeout();
     void invalidateFilter();
     void markerLineSet(BufferId buffer, MsgId msg);
 
 private:
-    void init(MessageFilter *filter);
+    void init(MessageFilter* filter);
 
-    AbstractBufferContainer *_bufferContainer;
-    ChatScene *_scene;
+    AbstractBufferContainer* _bufferContainer;
+    ChatScene* _scene;
     int _lastScrollbarPos;
     qreal _currentScaleFactor;
     QTimer _scrollTimer;
     int _scrollOffset;
     bool _invalidateFilter;
-    QSet<ChatLine *> _linesWithCache;
+    QSet<ChatLine*> _linesWithCache;
     bool _firstTouchUpdateHappened = false;
+    /// Workaround: If true, backlog has been requested before the vertical scrollbar became visible
+    bool _backlogRequestedBeforeScrollable{false};
 };
-
 
 #endif

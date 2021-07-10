@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,29 +18,27 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef CLEARABLELINEEDIT_H
-#define CLEARABLELINEEDIT_H
+#pragma once
+
+#include "uisupport-export.h"
 
 #include <QLineEdit>
 
 class QToolButton;
 
-class ClearableLineEdit : public QLineEdit
+class UISUPPORT_EXPORT ClearableLineEdit : public QLineEdit
 {
     Q_OBJECT
 
 public:
-    ClearableLineEdit(QWidget *parent = 0);
+    ClearableLineEdit(QWidget* parent = nullptr);
 
 protected:
-    void resizeEvent(QResizeEvent *event);
+    void resizeEvent(QResizeEvent* event) override;
 
 private slots:
-    void updateClearButton(const QString &text);
+    void updateClearButton(const QString& text);
 
 private:
-    QToolButton *clearButton;
+    QToolButton* clearButton;
 };
-
-
-#endif // CLEARABLELINEEDIT_H

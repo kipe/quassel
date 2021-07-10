@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -21,10 +21,11 @@
 #ifndef _CHATMONITORSETTINGSPAGE_H_
 #define _CHATMONITORSETTINGSPAGE_H_
 
-#include "settingspage.h"
-#include "ui_chatmonitorsettingspage.h"
-
 #include <QHash>
+
+#include "settingspage.h"
+
+#include "ui_chatmonitorsettingspage.h"
 
 class BufferViewConfig;
 
@@ -33,14 +34,14 @@ class ChatMonitorSettingsPage : public SettingsPage
     Q_OBJECT
 
 public:
-    ChatMonitorSettingsPage(QWidget *parent = 0);
-    bool hasDefaults() const;
+    ChatMonitorSettingsPage(QWidget* parent = nullptr);
+    bool hasDefaults() const override;
 
 public slots:
-    void save();
-    void load();
+    void save() override;
+    void load() override;
     void loadSettings();
-    void defaults();
+    void defaults() override;
 
 private slots:
     void widgetHasChanged();
@@ -48,15 +49,26 @@ private slots:
     void on_deactivateBuffer_clicked();
     void switchOperationMode(int idx);
 
+    /**
+     * Sets the local cache of the current backlog requester type, used to determine if showing
+     * backlog in the Chat Monitor will work
+     *
+     * @seealso BacklogSettings::setRequesterType()
+     */
+    void setRequesterType(const QVariant&);
+
+    /**
+     * Event handler for Show Backlog Unavailable Details button
+     */
+    void on_showBacklogUnavailableDetails_clicked();
 private:
     Ui::ChatMonitorSettingsPage ui;
     QHash<QString, QVariant> settings;
     bool testHasChanged();
-    void toggleBuffers(BufferView *inView, BufferViewConfig *inCfg, BufferView *outView, BufferViewConfig *outCfg);
+    void toggleBuffers(BufferView* inView, BufferViewConfig* inCfg, BufferView* outView, BufferViewConfig* outCfg);
 
-    BufferViewConfig *_configAvailable;
-    BufferViewConfig *_configActive;
+    BufferViewConfig* _configAvailable;
+    BufferViewConfig* _configActive;
 };
-
 
 #endif

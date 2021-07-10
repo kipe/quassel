@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -32,7 +32,7 @@ class AboutDlg : public QDialog
     Q_OBJECT
 
 public:
-    AboutDlg(QWidget *parent = 0);
+    AboutDlg(QWidget* parent = nullptr);
 
 private:
     Ui::AboutDlg ui;
@@ -42,8 +42,7 @@ private:
     QString contributors() const;
     QString thanksTo() const;
 
-    AboutData *_aboutData;
+    AboutData* _aboutData;
 };
-
 
 #endif

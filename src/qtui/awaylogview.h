@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,9 +30,8 @@ class AwayLogView : public ChatMonitorView
     Q_OBJECT
 
 public:
-    AwayLogView(AwayLogFilter *filter, QWidget *parent = 0);
-    virtual void addActionsToMenu(QMenu *menu, const QPointF &pos);
+    AwayLogView(AwayLogFilter* filter, QWidget* parent = nullptr);
+    void addActionsToMenu(QMenu* menu, const QPointF& pos) override;
 };
 
-
-#endif //AWAYLOGVIEW_H
+#endif  // AWAYLOGVIEW_H

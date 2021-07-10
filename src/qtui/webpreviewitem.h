@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,20 +23,19 @@
 
 #if defined HAVE_WEBKIT || defined HAVE_WEBENGINE
 
-#include <QGraphicsItem>
+#    include <QGraphicsItem>
 
 class WebPreviewItem : public QGraphicsItem
 {
 public:
-    WebPreviewItem(const QUrl &url);
-    virtual void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
-    virtual inline QRectF boundingRect() const { return _boundingRect; }
+    WebPreviewItem(const QUrl& url);
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget = nullptr) override;
+    inline QRectF boundingRect() const override { return _boundingRect; }
 
 private:
     QRectF _boundingRect;
 };
 
+#endif  //#ifdef HAVE_WEBKIT || HAVE_WEBENGINE
 
-#endif //#ifdef HAVE_WEBKIT || HAVE_WEBENGINE
-
-#endif //WEBPREVIEWITEM_H
+#endif  // WEBPREVIEWITEM_H

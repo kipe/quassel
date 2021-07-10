@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,121 +22,77 @@
 
 #include "signalproxy.h"
 
-INIT_SYNCABLE_OBJECT(CoreIdentity)
-CoreIdentity::CoreIdentity(IdentityId id, QObject *parent)
+CoreIdentity::CoreIdentity(IdentityId id, QObject* parent)
     : Identity(id, parent)
-#ifdef HAVE_SSL
-    , _certManager(*this)
-#endif
+    , _certManager(this)
 {
-#ifdef HAVE_SSL
-    connect(this, SIGNAL(idSet(IdentityId)), &_certManager, SLOT(setId(IdentityId)));
-    connect(&_certManager, SIGNAL(updated()), this, SIGNAL(updated()));
-#endif
+    connect(this, &Identity::idSet, &_certManager, &CoreCertManager::setId);
+    connect(&_certManager, &SyncableObject::updated, this, &SyncableObject::updated);
 }
 
-
-CoreIdentity::CoreIdentity(const Identity &other, QObject *parent)
+CoreIdentity::CoreIdentity(const Identity& other, QObject* parent)
     : Identity(other, parent)
-#ifdef HAVE_SSL
-    , _certManager(*this)
-#endif
+    , _certManager(this)
 {
-#ifdef HAVE_SSL
-    connect(this, SIGNAL(idSet(IdentityId)), &_certManager, SLOT(setId(IdentityId)));
-    connect(&_certManager, SIGNAL(updated()), this, SIGNAL(updated()));
-#endif
+    connect(this, &Identity::idSet, &_certManager, &CoreCertManager::setId);
+    connect(&_certManager, &SyncableObject::updated, this, &SyncableObject::updated);
 }
 
-
-CoreIdentity::CoreIdentity(const CoreIdentity &other, QObject *parent)
+CoreIdentity::CoreIdentity(const CoreIdentity& other, QObject* parent)
     : Identity(other, parent)
-#ifdef HAVE_SSL
-    , _sslKey(other._sslKey),
-    _sslCert(other._sslCert),
-    _certManager(*this)
-#endif
+    , _sslKey(other._sslKey)
+    , _sslCert(other._sslCert)
+    , _certManager(this)
 {
-#ifdef HAVE_SSL
-    connect(this, SIGNAL(idSet(IdentityId)), &_certManager, SLOT(setId(IdentityId)));
-    connect(&_certManager, SIGNAL(updated()), this, SIGNAL(updated()));
-#endif
+    connect(this, &Identity::idSet, &_certManager, &CoreCertManager::setId);
+    connect(&_certManager, &SyncableObject::updated, this, &SyncableObject::updated);
 }
 
-
-void CoreIdentity::synchronize(SignalProxy *proxy)
+void CoreIdentity::synchronize(SignalProxy* proxy)
 {
     proxy->synchronize(this);
-#ifdef HAVE_SSL
     proxy->synchronize(&_certManager);
-#endif
 }
 
-
-#ifdef HAVE_SSL
-void CoreIdentity::setSslKey(const QByteArray &encoded)
+void CoreIdentity::setSslKey(const QByteArray& encoded)
 {
     QSslKey key(encoded, QSsl::Rsa);
-#if QT_VERSION >= 0x050500
     if (key.isNull())
         key = QSslKey(encoded, QSsl::Ec);
-#endif
     if (key.isNull())
         key = QSslKey(encoded, QSsl::Dsa);
     setSslKey(key);
 }
 
-
-void CoreIdentity::setSslCert(const QByteArray &encoded)
+void CoreIdentity::setSslCert(const QByteArray& encoded)
 {
     setSslCert(QSslCertificate(encoded));
 }
 
-
-#endif
-
-CoreIdentity &CoreIdentity::operator=(const CoreIdentity &identity)
-{
-    Identity::operator=(identity);
-#ifdef HAVE_SSL
-    _sslKey = identity._sslKey;
-    _sslCert = identity._sslCert;
-#endif
-    return *this;
-}
-
-
-#ifdef HAVE_SSL
 // ========================================
 //  CoreCertManager
 // ========================================
-INIT_SYNCABLE_OBJECT(CoreCertManager)
-CoreCertManager::CoreCertManager(CoreIdentity &identity)
-    : CertManager(identity.id()),
-    identity(identity)
+
+CoreCertManager::CoreCertManager(CoreIdentity* identity)
+    : CertManager(identity->id())
+    , _identity(identity)
 {
     setAllowClientUpdates(true);
 }
 
-
 void CoreCertManager::setId(IdentityId id)
 {
-    renameObject(QString::number(id.toInt()));
+    setObjectName(QString::number(id.toInt()));
 }
 
-
-void CoreCertManager::setSslKey(const QByteArray &encoded)
+void CoreCertManager::setSslKey(const QByteArray& encoded)
 {
-    identity.setSslKey(encoded);
+    _identity->setSslKey(encoded);
     CertManager::setSslKey(encoded);
 }
 
-
-void CoreCertManager::setSslCert(const QByteArray &encoded)
+void CoreCertManager::setSslCert(const QByteArray& encoded)
 {
-    identity.setSslCert(encoded);
+    _identity->setSslCert(encoded);
     CertManager::setSslCert(encoded);
 }
-
-
-#endif //HAVE_SSL

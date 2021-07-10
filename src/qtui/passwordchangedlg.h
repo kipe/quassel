@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -29,7 +29,7 @@ class PasswordChangeDlg : public QDialog
     Q_OBJECT
 
 public:
-    PasswordChangeDlg(QWidget *parent = nullptr);
+    PasswordChangeDlg(QWidget* parent = nullptr);
 
 private slots:
     void inputChanged();

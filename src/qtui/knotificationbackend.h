@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -34,11 +34,11 @@ class KNotificationBackend : public AbstractNotificationBackend
     Q_OBJECT
 
 public:
-    KNotificationBackend(QObject *parent = 0);
+    KNotificationBackend(QObject* parent = nullptr);
 
-    void notify(const Notification &);
-    void close(uint notificationId);
-    virtual SettingsPage *createConfigWidget() const;
+    void notify(const Notification&) override;
+    void close(uint notificationId) override;
+    SettingsPage* createConfigWidget() const override;
 
 private slots:
     void notificationActivated();
@@ -54,20 +54,19 @@ private:
     QList<QPair<uint, QPointer<KNotification>>> _notifications;
 };
 
-
 class KNotificationBackend::ConfigWidget : public SettingsPage
 {
     Q_OBJECT
 
 public:
-    ConfigWidget(QWidget *parent = 0);
+    ConfigWidget(QWidget* parent = nullptr);
 
-    void save();
-    void load();
+    void save() override;
+    void load() override;
 
 private slots:
     void widgetChanged(bool);
 
 private:
-    KNotifyConfigWidget *_widget;
+    KNotifyConfigWidget* _widget;
 };

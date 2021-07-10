@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,16 +30,16 @@ class CoreEventManager : public EventManager
     Q_OBJECT
 
 public:
-    CoreEventManager(CoreSession *session)
+    CoreEventManager(CoreSession* session)
         : EventManager(session)
         , _coreSession(session)
     {}
 
 protected:
-    inline Network *networkById(NetworkId id) const { return _coreSession->network(id); }
+    inline Network* networkById(NetworkId id) const override { return _coreSession->network(id); }
 
 private:
-    CoreSession *_coreSession;
+    CoreSession* _coreSession;
 };
 
 #endif

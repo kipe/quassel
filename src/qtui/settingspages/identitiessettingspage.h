@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,16 +18,14 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef IDENTITIESSETTINGSPAGE_H
-#define IDENTITIESSETTINGSPAGE_H
+#pragma once
 
 #include "clientidentity.h"
+#include "identityeditwidget.h"
 #include "settingspage.h"
 
-#include "identityeditwidget.h"
-
-#include "ui_identitiessettingspage.h"
 #include "ui_createidentitydlg.h"
+#include "ui_identitiessettingspage.h"
 #include "ui_saveidentitiesdlg.h"
 
 class QAbstractItemModel;
@@ -37,15 +35,15 @@ class IdentitiesSettingsPage : public SettingsPage
     Q_OBJECT
 
 public:
-    IdentitiesSettingsPage(QWidget *parent = 0);
+    IdentitiesSettingsPage(QWidget* parent = nullptr);
 
-    virtual inline bool needsCoreConnection() const { return true; }
+    inline bool needsCoreConnection() const override { return true; }
 
-    bool aboutToSave();
+    bool aboutToSave() override;
 
 public slots:
-    void save();
-    void load();
+    void save() final override;
+    void load() final override;
 
 private slots:
     void coreConnectionStateChanged(bool);
@@ -59,37 +57,32 @@ private slots:
     void on_deleteIdentity_clicked();
     void on_renameIdentity_clicked();
 
-#ifdef HAVE_SSL
     void continueUnsecured();
-#endif
     void widgetHasChanged();
     void setWidgetStates();
 
 private:
     Ui::IdentitiesSettingsPage ui;
 
-    QHash<IdentityId, CertIdentity *> identities;
+    QHash<IdentityId, CertIdentity*> identities;
     IdentityId currentId;
 
-    QList<IdentityId> changedIdentities; // for setting the widget changed state
+    QList<IdentityId> changedIdentities;  // for setting the widget changed state
     QList<IdentityId> deletedIdentities;
 
-    bool _editSsl;
+    bool _editSsl{false};
 
-    void insertIdentity(CertIdentity *identity);
-    void removeIdentity(Identity *identity);
-    void renameIdentity(IdentityId id, const QString &newName);
+    void insertIdentity(CertIdentity* identity);
+    void removeIdentity(Identity* identity);
+    void renameIdentity(IdentityId id, const QString& newName);
 
-#ifdef HAVE_SSL
-    QSslKey keyByFilename(const QString &filename);
-    void showKeyState(const QSslKey &key);
-    QSslCertificate certByFilename(const QString &filename);
-    void showCertState(const QSslCertificate &cert);
-#endif
+    QSslKey keyByFilename(const QString& filename);
+    void showKeyState(const QSslKey& key);
+    QSslCertificate certByFilename(const QString& filename);
+    void showCertState(const QSslCertificate& cert);
 
     bool testHasChanged();
 };
-
 
 // ==============================
 //  Various Dialogs
@@ -99,25 +92,27 @@ class CreateIdentityDlg : public QDialog
     Q_OBJECT
 
 public:
-    CreateIdentityDlg(QAbstractItemModel *model, QWidget *parent = 0);
+    CreateIdentityDlg(QAbstractItemModel* model, QWidget* parent = nullptr);
 
     QString identityName() const;
     IdentityId duplicateId() const;
 
 private slots:
-    void on_identityName_textChanged(const QString &text);
+    void on_identityName_textChanged(const QString& text);
 
 private:
     Ui::CreateIdentityDlg ui;
 };
-
 
 class SaveIdentitiesDlg : public QDialog
 {
     Q_OBJECT
 
 public:
-    SaveIdentitiesDlg(const QList<CertIdentity *> &toCreate, const QList<CertIdentity *> &toUpdate, const QList<IdentityId> &toRemove, QWidget *parent = 0);
+    SaveIdentitiesDlg(const QList<CertIdentity*>& toCreate,
+                      const QList<CertIdentity*>& toUpdate,
+                      const QList<IdentityId>& toRemove,
+                      QWidget* parent = nullptr);
 
 private slots:
     void clientEvent();
@@ -127,6 +122,3 @@ private:
 
     int numevents, rcvevents;
 };
-
-
-#endif

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -24,29 +24,26 @@
 #include "client.h"
 #include "mainwin.h"
 
-TitleSetter::TitleSetter(MainWin *parent)
-    : AbstractItemView(parent),
-    _mainWin(parent)
-{
-}
+TitleSetter::TitleSetter(MainWin* parent)
+    : AbstractItemView(parent)
+    , _mainWin(parent)
+{}
 
-
-void TitleSetter::currentChanged(const QModelIndex &current, const QModelIndex &previous)
+void TitleSetter::currentChanged(const QModelIndex& current, const QModelIndex& previous)
 {
     Q_UNUSED(previous);
     changeWindowTitle(current.sibling(current.row(), 0));
 }
 
-
-void TitleSetter::dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight)
+void TitleSetter::dataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight)
 {
     QItemSelectionRange changedArea(topLeft, bottomRight);
     QModelIndex currentTopicIndex = selectionModel()->currentIndex().sibling(selectionModel()->currentIndex().row(), 0);
     if (changedArea.contains(currentTopicIndex))
         changeWindowTitle(currentTopicIndex);
-};
+}
 
-void TitleSetter::changeWindowTitle(const QModelIndex &index)
+void TitleSetter::changeWindowTitle(const QModelIndex& index)
 {
     BufferId id = index.data(NetworkModel::BufferIdRole).value<BufferId>();
     if (!id.isValid())

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,13 +23,11 @@
 #include <QDebug>
 #include <QMouseEvent>
 
-ClickableLabel::ClickableLabel(QWidget *parent)
+ClickableLabel::ClickableLabel(QWidget* parent)
     : QLabel(parent)
-{
-}
+{}
 
-
-void ClickableLabel::mouseReleaseEvent(QMouseEvent *event)
+void ClickableLabel::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->pos().x() > size().width() || event->pos().y() > size().height())
         return;

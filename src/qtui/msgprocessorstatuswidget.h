@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -28,7 +28,7 @@ class MsgProcessorStatusWidget : public QWidget
     Q_OBJECT
 
 public:
-    MsgProcessorStatusWidget(QWidget *parent = 0);
+    MsgProcessorStatusWidget(QWidget* parent = nullptr);
 
 public slots:
     void setProgress(int value, int max);
@@ -36,6 +36,5 @@ public slots:
 private:
     Ui::MsgProcessorStatusWidget ui;
 };
-
 
 #endif

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,23 +20,17 @@
 
 #include "postgresqlstorage.h"
 
-#include <QtSql>
+#include <QByteArray>
+#include <QDataStream>
+#include <QSqlDriver>
+#include <QSqlField>
 
-#include "logmessage.h"
 #include "network.h"
 #include "quassel.h"
 
-PostgreSqlStorage::PostgreSqlStorage(QObject *parent)
-    : AbstractSqlStorage(parent),
-    _port(-1)
-{
-}
-
-
-PostgreSqlStorage::~PostgreSqlStorage()
-{
-}
-
+PostgreSqlStorage::PostgreSqlStorage(QObject* parent)
+    : AbstractSqlStorage(parent)
+{}
 
 std::unique_ptr<AbstractSqlMigrationWriter> PostgreSqlStorage::createMigrationWriter()
 {
@@ -51,29 +45,25 @@ std::unique_ptr<AbstractSqlMigrationWriter> PostgreSqlStorage::createMigrationWr
     return std::unique_ptr<AbstractSqlMigrationWriter>{writer};
 }
 
-
 bool PostgreSqlStorage::isAvailable() const
 {
     if (!QSqlDatabase::isDriverAvailable("QPSQL")) {
-        quWarning() << qPrintable(tr("PostgreSQL driver plugin not available for Qt. Installed drivers:"))
-                    << qPrintable(QSqlDatabase::drivers().join(", "));
+        qWarning() << qPrintable(tr("PostgreSQL driver plugin not available for Qt. Installed drivers:"))
+                   << qPrintable(QSqlDatabase::drivers().join(", "));
         return false;
     }
     return true;
 }
-
 
 QString PostgreSqlStorage::backendId() const
 {
     return QString("PostgreSQL");
 }
 
-
 QString PostgreSqlStorage::displayName() const
 {
-    return backendId(); // Note: Pre-0.13 clients use the displayName property for backend idenfication
+    return backendId();  // Note: Pre-0.13 clients use the displayName property for backend idenfication
 }
-
 
 QString PostgreSqlStorage::description() const
 {
@@ -81,21 +71,15 @@ QString PostgreSqlStorage::description() const
     return tr("PostgreSQL Turbo Bomber HD!");
 }
 
-
 QVariantList PostgreSqlStorage::setupData() const
 {
     QVariantList data;
-    data << "Username" << tr("Username") << QString("quassel")
-         << "Password" << tr("Password") << QString()
-         << "Hostname" << tr("Hostname") << QString("localhost")
-         << "Port"     << tr("Port")     << 5432
-         << "Database" << tr("Database") << QString("quassel")
-         ;
+    data << "Username" << tr("Username") << QString("quassel") << "Password" << tr("Password") << QString() << "Hostname" << tr("Hostname")
+         << QString("localhost") << "Port" << tr("Port") << 5432 << "Database" << tr("Database") << QString("quassel");
     return data;
 }
 
-
-bool PostgreSqlStorage::initDbSession(QSqlDatabase &db)
+bool PostgreSqlStorage::initDbSession(QSqlDatabase& db)
 {
     // check whether the Qt driver performs string escaping or not.
     // i.e. test if it doubles slashes.
@@ -103,14 +87,14 @@ bool PostgreSqlStorage::initDbSession(QSqlDatabase &db)
     testField.setType(QVariant::String);
     testField.setValue("\\");
     QString formattedString = db.driver()->formatValue(testField);
-    switch(formattedString.count('\\')) {
+    switch (formattedString.count('\\')) {
     case 2:
         // yes it does... and we cannot do anything to change the behavior of Qt.
         // If this is a legacy DB (Postgres < 8.2), then everything is already ok,
         // as this is the expected behavior.
         // If it is a newer version, switch to legacy mode.
 
-        quWarning() << "Switching Postgres to legacy mode. (set standard conforming strings to off)";
+        qWarning() << "Switching Postgres to legacy mode. (set standard conforming strings to off)";
         // If the following calls fail, it is a legacy DB anyways, so it doesn't matter
         // and no need to check the outcome.
         db.exec("set standard_conforming_strings = off");
@@ -124,14 +108,15 @@ bool PostgreSqlStorage::initDbSession(QSqlDatabase &db)
             if (query.lastError().isValid()) {
                 // We cannot enable standard conforming strings...
                 // since Quassel does no escaping by itself, this would yield a major vulnerability.
-                quError() << "Failed to enable standard_conforming_strings for the Postgres db!";
+                qCritical() << "Failed to enable standard_conforming_strings for the Postgres db!";
                 return false;
             }
         }
         break;
     default:
         // The slash got replaced with 0 or more than 2 slashes! o_O
-        quError() << "Your version of Qt does something _VERY_ strange to slashes in QSqlQueries! You should consult your trusted doctor!";
+        qCritical()
+            << "Your version of Qt does something _VERY_ strange to slashes in QSqlQueries! You should consult your trusted doctor!";
         return false;
         break;
     }
@@ -139,17 +124,14 @@ bool PostgreSqlStorage::initDbSession(QSqlDatabase &db)
     // Set the PostgreSQL session timezone to UTC, since we want timestamps stored in UTC
     QSqlQuery tzQuery = db.exec("SET timezone = 'UTC'");
     if (tzQuery.lastError().isValid()) {
-        quError() << "Failed to set timezone to UTC!";
+        qCritical() << "Failed to set timezone to UTC!";
         return false;
     }
 
     return true;
 }
 
-
-void PostgreSqlStorage::setConnectionProperties(const QVariantMap &properties,
-                                                const QProcessEnvironment &environment,
-                                                bool loadFromEnvironment)
+void PostgreSqlStorage::setConnectionProperties(const QVariantMap& properties, const QProcessEnvironment& environment, bool loadFromEnvironment)
 {
     if (loadFromEnvironment) {
         _userName = environment.value("DB_PGSQL_USERNAME");
@@ -157,7 +139,8 @@ void PostgreSqlStorage::setConnectionProperties(const QVariantMap &properties,
         _hostName = environment.value("DB_PGSQL_HOSTNAME");
         _port = environment.value("DB_PGSQL_PORT").toInt();
         _databaseName = environment.value("DB_PGSQL_DATABASE");
-    } else {
+    }
+    else {
         _userName = properties["Username"].toString();
         _password = properties["Password"].toString();
         _hostName = properties["Hostname"].toString();
@@ -165,7 +148,6 @@ void PostgreSqlStorage::setConnectionProperties(const QVariantMap &properties,
         _databaseName = properties["Database"].toString();
     }
 }
-
 
 int PostgreSqlStorage::installedSchemaVersion()
 {
@@ -186,22 +168,40 @@ int PostgreSqlStorage::installedSchemaVersion()
     return AbstractSqlStorage::installedSchemaVersion();
 }
 
-
-bool PostgreSqlStorage::updateSchemaVersion(int newVersion)
+bool PostgreSqlStorage::updateSchemaVersion(int newVersion, bool clearUpgradeStep)
 {
-    QSqlQuery query(logDb());
+    // Atomically update the schema version and clear the upgrade step, if specified
+    // Note: This will need reworked if "updateSchemaVersion" is ever called within a transaction.
+    QSqlDatabase db = logDb();
+    if (!beginTransaction(db)) {
+        qWarning() << "PostgreSqlStorage::updateSchemaVersion(int, bool): cannot start transaction!";
+        qWarning() << " -" << qPrintable(db.lastError().text());
+        return false;
+    }
+
+    QSqlQuery query(db);
     query.prepare("UPDATE coreinfo SET value = :version WHERE key = 'schemaversion'");
     query.bindValue(":version", newVersion);
     safeExec(query);
 
-    bool success = true;
     if (!watchQuery(query)) {
-        qCritical() << "PostgreSqlStorage::updateSchemaVersion(int): Updating schema version failed!";
-        success = false;
+        qCritical() << "PostgreSqlStorage::updateSchemaVersion(int, bool): Updating schema version failed!";
+        db.rollback();
+        return false;
     }
-    return success;
-}
 
+    if (clearUpgradeStep) {
+        // Try clearing the upgrade step if requested
+        if (!setSchemaVersionUpgradeStep("")) {
+            db.rollback();
+            return false;
+        }
+    }
+
+    // Successful, commit and return true
+    db.commit();
+    return true;
+}
 
 bool PostgreSqlStorage::setupSchemaVersion(int version)
 {
@@ -218,8 +218,51 @@ bool PostgreSqlStorage::setupSchemaVersion(int version)
     return success;
 }
 
+QString PostgreSqlStorage::schemaVersionUpgradeStep()
+{
+    QSqlQuery query(logDb());
+    query.prepare("SELECT value FROM coreinfo WHERE key = 'schemaupgradestep'");
+    safeExec(query);
+    watchQuery(query);
+    if (query.first())
+        return query.value(0).toString();
 
-UserId PostgreSqlStorage::addUser(const QString &user, const QString &password, const QString &authenticator)
+    // Fall back to the default value
+    return AbstractSqlStorage::schemaVersionUpgradeStep();
+}
+
+bool PostgreSqlStorage::setSchemaVersionUpgradeStep(QString upgradeQuery)
+{
+    // Intentionally do not wrap in a transaction so other functions can include multiple operations
+
+    QSqlQuery query(logDb());
+    query.prepare("UPDATE coreinfo SET value = :upgradestep WHERE key = 'schemaupgradestep'");
+    query.bindValue(":upgradestep", upgradeQuery);
+    safeExec(query);
+
+    // Make sure that the query didn't fail (shouldn't ever happen), and that some non-zero number
+    // of rows were affected
+    bool success = watchQuery(query) && query.numRowsAffected() != 0;
+
+    if (!success) {
+        // The key might not exist (Quassel 0.13.0 and older).  Try inserting it...
+        query = QSqlQuery(logDb());
+        query.prepare("INSERT INTO coreinfo (key, value) VALUES ('schemaupgradestep', :upgradestep)");
+        query.bindValue(":upgradestep", upgradeQuery);
+        safeExec(query);
+
+        if (!watchQuery(query)) {
+            qCritical() << Q_FUNC_INFO << "Setting schema upgrade step failed!";
+            success = false;
+        }
+        else {
+            success = true;
+        }
+    }
+    return success;
+}
+
+UserId PostgreSqlStorage::addUser(const QString& user, const QString& password, const QString& authenticator)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("insert_quasseluser"));
@@ -237,8 +280,7 @@ UserId PostgreSqlStorage::addUser(const QString &user, const QString &password, 
     return uid;
 }
 
-
-bool PostgreSqlStorage::updateUser(UserId user, const QString &password)
+bool PostgreSqlStorage::updateUser(UserId user, const QString& password)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_userpassword"));
@@ -250,8 +292,7 @@ bool PostgreSqlStorage::updateUser(UserId user, const QString &password)
     return query.numRowsAffected() != 0;
 }
 
-
-void PostgreSqlStorage::renameUser(UserId user, const QString &newName)
+void PostgreSqlStorage::renameUser(UserId user, const QString& newName)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_username"));
@@ -262,8 +303,7 @@ void PostgreSqlStorage::renameUser(UserId user, const QString &newName)
     emit userRenamed(user, newName);
 }
 
-
-UserId PostgreSqlStorage::validateUser(const QString &user, const QString &password)
+UserId PostgreSqlStorage::validateUser(const QString& user, const QString& password)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("select_authuser"));
@@ -271,7 +311,11 @@ UserId PostgreSqlStorage::validateUser(const QString &user, const QString &passw
     safeExec(query);
     watchQuery(query);
 
-    if (query.first() && checkHashedPassword(query.value(0).toInt(), password, query.value(1).toString(), static_cast<Storage::HashVersion>(query.value(2).toInt()))) {
+    if (query.first()
+        && checkHashedPassword(query.value(0).toInt(),
+                               password,
+                               query.value(1).toString(),
+                               static_cast<Storage::HashVersion>(query.value(2).toInt()))) {
         return query.value(0).toInt();
     }
     else {
@@ -279,8 +323,7 @@ UserId PostgreSqlStorage::validateUser(const QString &user, const QString &passw
     }
 }
 
-
-UserId PostgreSqlStorage::getUserId(const QString &user)
+UserId PostgreSqlStorage::getUserId(const QString& user)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("select_userid"));
@@ -327,7 +370,6 @@ UserId PostgreSqlStorage::internalUser()
     }
 }
 
-
 void PostgreSqlStorage::delUser(UserId user)
 {
     QSqlDatabase db = logDb();
@@ -350,8 +392,7 @@ void PostgreSqlStorage::delUser(UserId user)
     }
 }
 
-
-void PostgreSqlStorage::setUserSetting(UserId userId, const QString &settingName, const QVariant &data)
+void PostgreSqlStorage::setUserSetting(UserId userId, const QString& settingName, const QVariant& data)
 {
     QByteArray rawData;
     QDataStream out(&rawData, QIODevice::WriteOnly);
@@ -383,8 +424,7 @@ void PostgreSqlStorage::setUserSetting(UserId userId, const QString &settingName
     watchQuery(setQuery);
 }
 
-
-QVariant PostgreSqlStorage::getUserSetting(UserId userId, const QString &settingName, const QVariant &defaultData)
+QVariant PostgreSqlStorage::getUserSetting(UserId userId, const QString& settingName, const QVariant& defaultData)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("select_user_setting"));
@@ -406,8 +446,7 @@ QVariant PostgreSqlStorage::getUserSetting(UserId userId, const QString &setting
     }
 }
 
-
-void PostgreSqlStorage::setCoreState(const QVariantList &data)
+void PostgreSqlStorage::setCoreState(const QVariantList& data)
 {
     QByteArray rawData;
     QDataStream out(&rawData, QIODevice::WriteOnly);
@@ -437,8 +476,7 @@ void PostgreSqlStorage::setCoreState(const QVariantList &data)
     watchQuery(setQuery);
 }
 
-
-QVariantList PostgreSqlStorage::getCoreState(const QVariantList &defaultData)
+QVariantList PostgreSqlStorage::getCoreState(const QVariantList& defaultData)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("select_core_state"));
@@ -453,13 +491,13 @@ QVariantList PostgreSqlStorage::getCoreState(const QVariantList &defaultData)
         in.setVersion(QDataStream::Qt_4_2);
         in >> data;
         return data;
-    } else {
+    }
+    else {
         return defaultData;
     }
 }
 
-
-IdentityId PostgreSqlStorage::createIdentity(UserId user, CoreIdentity &identity)
+IdentityId PostgreSqlStorage::createIdentity(UserId user, CoreIdentity& identity)
 {
     IdentityId identityId;
 
@@ -490,17 +528,12 @@ IdentityId PostgreSqlStorage::createIdentity(UserId user, CoreIdentity &identity
     query.bindValue(":kickreason", identity.kickReason());
     query.bindValue(":partreason", identity.partReason());
     query.bindValue(":quitreason", identity.quitReason());
-#ifdef HAVE_SSL
     query.bindValue(":sslcert", identity.sslCert().toPem());
     query.bindValue(":sslkey", identity.sslKey().toPem());
-#else
-    query.bindValue(":sslcert", QByteArray());
-    query.bindValue(":sslkey", QByteArray());
-#endif
     safeExec(query);
     if (!watchQuery(query)) {
         db.rollback();
-        return IdentityId();
+        return {};
     }
 
     query.first();
@@ -509,31 +542,30 @@ IdentityId PostgreSqlStorage::createIdentity(UserId user, CoreIdentity &identity
 
     if (!identityId.isValid()) {
         db.rollback();
-        return IdentityId();
+        return {};
     }
 
     QSqlQuery insertNickQuery(db);
     insertNickQuery.prepare(queryString("insert_nick"));
-    foreach(QString nick, identity.nicks()) {
+    foreach (QString nick, identity.nicks()) {
         insertNickQuery.bindValue(":identityid", identityId.toInt());
         insertNickQuery.bindValue(":nick", nick);
         safeExec(insertNickQuery);
         if (!watchQuery(insertNickQuery)) {
             db.rollback();
-            return IdentityId();
+            return {};
         }
     }
 
     if (!db.commit()) {
         qWarning() << "PostgreSqlStorage::createIdentity(): committing data failed!";
         qWarning() << " -" << qPrintable(db.lastError().text());
-        return IdentityId();
+        return {};
     }
     return identityId;
 }
 
-
-bool PostgreSqlStorage::updateIdentity(UserId user, const CoreIdentity &identity)
+bool PostgreSqlStorage::updateIdentity(UserId user, const CoreIdentity& identity)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -574,13 +606,8 @@ bool PostgreSqlStorage::updateIdentity(UserId user, const CoreIdentity &identity
     query.bindValue(":kickreason", identity.kickReason());
     query.bindValue(":partreason", identity.partReason());
     query.bindValue(":quitreason", identity.quitReason());
-#ifdef HAVE_SSL
     query.bindValue(":sslcert", identity.sslCert().toPem());
     query.bindValue(":sslkey", identity.sslKey().toPem());
-#else
-    query.bindValue(":sslcert", QByteArray());
-    query.bindValue(":sslkey", QByteArray());
-#endif
     query.bindValue(":identityid", identity.id().toInt());
 
     safeExec(query);
@@ -600,7 +627,7 @@ bool PostgreSqlStorage::updateIdentity(UserId user, const CoreIdentity &identity
 
     QSqlQuery insertNickQuery(db);
     insertNickQuery.prepare(queryString("insert_nick"));
-    foreach(QString nick, identity.nicks()) {
+    foreach (QString nick, identity.nicks()) {
         insertNickQuery.bindValue(":identityid", identity.id().toInt());
         insertNickQuery.bindValue(":nick", nick);
         safeExec(insertNickQuery);
@@ -617,7 +644,6 @@ bool PostgreSqlStorage::updateIdentity(UserId user, const CoreIdentity &identity
     }
     return true;
 }
-
 
 void PostgreSqlStorage::removeIdentity(UserId user, IdentityId identityId)
 {
@@ -641,10 +667,9 @@ void PostgreSqlStorage::removeIdentity(UserId user, IdentityId identityId)
     }
 }
 
-
-QList<CoreIdentity> PostgreSqlStorage::identities(UserId user)
+std::vector<CoreIdentity> PostgreSqlStorage::identities(UserId user)
 {
-    QList<CoreIdentity> identities;
+    std::vector<CoreIdentity> identities;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -683,10 +708,8 @@ QList<CoreIdentity> PostgreSqlStorage::identities(UserId user)
         identity.setKickReason(query.value(15).toString());
         identity.setPartReason(query.value(16).toString());
         identity.setQuitReason(query.value(17).toString());
-#ifdef HAVE_SSL
         identity.setSslCert(query.value(18).toByteArray());
         identity.setSslKey(query.value(19).toByteArray());
-#endif
 
         nickQuery.bindValue(":identityid", identity.id().toInt());
         QList<QString> nicks;
@@ -696,14 +719,13 @@ QList<CoreIdentity> PostgreSqlStorage::identities(UserId user)
             nicks << nickQuery.value(0).toString();
         }
         identity.setNicks(nicks);
-        identities << identity;
+        identities.push_back(std::move(identity));
     }
     db.commit();
     return identities;
 }
 
-
-NetworkId PostgreSqlStorage::createNetwork(UserId user, const NetworkInfo &info)
+NetworkId PostgreSqlStorage::createNetwork(UserId user, const NetworkInfo& info)
 {
     NetworkId networkId;
 
@@ -721,7 +743,7 @@ NetworkId PostgreSqlStorage::createNetwork(UserId user, const NetworkInfo &info)
     safeExec(query);
     if (!watchQuery(query)) {
         db.rollback();
-        return NetworkId();
+        return {};
     }
 
     query.first();
@@ -729,32 +751,31 @@ NetworkId PostgreSqlStorage::createNetwork(UserId user, const NetworkInfo &info)
 
     if (!networkId.isValid()) {
         db.rollback();
-        return NetworkId();
+        return {};
     }
 
     QSqlQuery insertServersQuery(db);
     insertServersQuery.prepare(queryString("insert_server"));
-    foreach(Network::Server server, info.serverList) {
+    foreach (Network::Server server, info.serverList) {
         insertServersQuery.bindValue(":userid", user.toInt());
         insertServersQuery.bindValue(":networkid", networkId.toInt());
         bindServerInfo(insertServersQuery, server);
         safeExec(insertServersQuery);
         if (!watchQuery(insertServersQuery)) {
             db.rollback();
-            return NetworkId();
+            return {};
         }
     }
 
     if (!db.commit()) {
         qWarning() << "PostgreSqlStorage::createNetwork(): committing data failed!";
         qWarning() << " -" << qPrintable(db.lastError().text());
-        return NetworkId();
+        return {};
     }
     return networkId;
 }
 
-
-void PostgreSqlStorage::bindNetworkInfo(QSqlQuery &query, const NetworkInfo &info)
+void PostgreSqlStorage::bindNetworkInfo(QSqlQuery& query, const NetworkInfo& info)
 {
     query.bindValue(":networkname", info.networkName);
     query.bindValue(":identityid", info.identity.isValid() ? info.identity.toInt() : QVariant());
@@ -779,12 +800,13 @@ void PostgreSqlStorage::bindNetworkInfo(QSqlQuery &query, const NetworkInfo &inf
     query.bindValue(":messagerateburstsize", info.messageRateBurstSize);
     query.bindValue(":messageratedelay", info.messageRateDelay);
     query.bindValue(":unlimitedmessagerate", info.unlimitedMessageRate);
+    query.bindValue(":skipcaps", info.skipCapsToString());
+
     if (info.networkId.isValid())
         query.bindValue(":networkid", info.networkId.toInt());
 }
 
-
-void PostgreSqlStorage::bindServerInfo(QSqlQuery &query, const Network::Server &server)
+void PostgreSqlStorage::bindServerInfo(QSqlQuery& query, const Network::Server& server)
 {
     query.bindValue(":hostname", server.host);
     query.bindValue(":port", server.port);
@@ -800,8 +822,7 @@ void PostgreSqlStorage::bindServerInfo(QSqlQuery &query, const Network::Server &
     query.bindValue(":sslverify", server.sslVerify);
 }
 
-
-bool PostgreSqlStorage::updateNetwork(UserId user, const NetworkInfo &info)
+bool PostgreSqlStorage::updateNetwork(UserId user, const NetworkInfo& info)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -836,7 +857,7 @@ bool PostgreSqlStorage::updateNetwork(UserId user, const NetworkInfo &info)
 
     QSqlQuery insertServersQuery(db);
     insertServersQuery.prepare(queryString("insert_server"));
-    foreach(Network::Server server, info.serverList) {
+    foreach (Network::Server server, info.serverList) {
         insertServersQuery.bindValue(":userid", user.toInt());
         insertServersQuery.bindValue(":networkid", info.networkId.toInt());
         bindServerInfo(insertServersQuery, server);
@@ -855,8 +876,7 @@ bool PostgreSqlStorage::updateNetwork(UserId user, const NetworkInfo &info)
     return true;
 }
 
-
-bool PostgreSqlStorage::removeNetwork(UserId user, const NetworkId &networkId)
+bool PostgreSqlStorage::removeNetwork(UserId user, const NetworkId& networkId)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -879,10 +899,9 @@ bool PostgreSqlStorage::removeNetwork(UserId user, const NetworkId &networkId)
     return true;
 }
 
-
-QList<NetworkInfo> PostgreSqlStorage::networks(UserId user)
+std::vector<NetworkInfo> PostgreSqlStorage::networks(UserId user)
 {
-    QList<NetworkInfo> nets;
+    std::vector<NetworkInfo> nets;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -930,6 +949,7 @@ QList<NetworkInfo> PostgreSqlStorage::networks(UserId user)
         net.messageRateBurstSize = networksQuery.value(20).toUInt();
         net.messageRateDelay = networksQuery.value(21).toUInt();
         net.unlimitedMessageRate = networksQuery.value(22).toBool();
+        net.skipCapsFromString(networksQuery.value(23).toString());
 
         serversQuery.bindValue(":networkid", net.networkId.toInt());
         safeExec(serversQuery);
@@ -956,16 +976,15 @@ QList<NetworkInfo> PostgreSqlStorage::networks(UserId user)
             servers << server;
         }
         net.serverList = servers;
-        nets << net;
+        nets.push_back(std::move(net));
     }
     db.commit();
     return nets;
 }
 
-
-QList<NetworkId> PostgreSqlStorage::connectedNetworks(UserId user)
+std::vector<NetworkId> PostgreSqlStorage::connectedNetworks(UserId user)
 {
-    QList<NetworkId> connectedNets;
+    std::vector<NetworkId> connectedNets;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -981,15 +1000,14 @@ QList<NetworkId> PostgreSqlStorage::connectedNetworks(UserId user)
     watchQuery(query);
 
     while (query.next()) {
-        connectedNets << query.value(0).toInt();
+        connectedNets.emplace_back(query.value(0).toInt());
     }
 
     db.commit();
     return connectedNets;
 }
 
-
-void PostgreSqlStorage::setNetworkConnected(UserId user, const NetworkId &networkId, bool isConnected)
+void PostgreSqlStorage::setNetworkConnected(UserId user, const NetworkId& networkId, bool isConnected)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_network_connected"));
@@ -1000,8 +1018,7 @@ void PostgreSqlStorage::setNetworkConnected(UserId user, const NetworkId &networ
     watchQuery(query);
 }
 
-
-QHash<QString, QString> PostgreSqlStorage::persistentChannels(UserId user, const NetworkId &networkId)
+QHash<QString, QString> PostgreSqlStorage::persistentChannels(UserId user, const NetworkId& networkId)
 {
     QHash<QString, QString> persistentChans;
 
@@ -1027,8 +1044,7 @@ QHash<QString, QString> PostgreSqlStorage::persistentChannels(UserId user, const
     return persistentChans;
 }
 
-
-void PostgreSqlStorage::setChannelPersistent(UserId user, const NetworkId &networkId, const QString &channel, bool isJoined)
+void PostgreSqlStorage::setChannelPersistent(UserId user, const NetworkId& networkId, const QString& channel, bool isJoined)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_buffer_persistent_channel"));
@@ -1040,8 +1056,7 @@ void PostgreSqlStorage::setChannelPersistent(UserId user, const NetworkId &netwo
     watchQuery(query);
 }
 
-
-void PostgreSqlStorage::setPersistentChannelKey(UserId user, const NetworkId &networkId, const QString &channel, const QString &key)
+void PostgreSqlStorage::setPersistentChannelKey(UserId user, const NetworkId& networkId, const QString& channel, const QString& key)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_buffer_set_channel_key"));
@@ -1052,7 +1067,6 @@ void PostgreSqlStorage::setPersistentChannelKey(UserId user, const NetworkId &ne
     safeExec(query);
     watchQuery(query);
 }
-
 
 QString PostgreSqlStorage::awayMessage(UserId user, NetworkId networkId)
 {
@@ -1068,8 +1082,7 @@ QString PostgreSqlStorage::awayMessage(UserId user, NetworkId networkId)
     return awayMsg;
 }
 
-
-void PostgreSqlStorage::setAwayMessage(UserId user, NetworkId networkId, const QString &awayMsg)
+void PostgreSqlStorage::setAwayMessage(UserId user, NetworkId networkId, const QString& awayMsg)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_network_set_awaymsg"));
@@ -1079,7 +1092,6 @@ void PostgreSqlStorage::setAwayMessage(UserId user, NetworkId networkId, const Q
     safeExec(query);
     watchQuery(query);
 }
-
 
 QString PostgreSqlStorage::userModes(UserId user, NetworkId networkId)
 {
@@ -1095,8 +1107,7 @@ QString PostgreSqlStorage::userModes(UserId user, NetworkId networkId)
     return modes;
 }
 
-
-void PostgreSqlStorage::setUserModes(UserId user, NetworkId networkId, const QString &userModes)
+void PostgreSqlStorage::setUserModes(UserId user, NetworkId networkId, const QString& userModes)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_network_set_usermode"));
@@ -1107,14 +1118,13 @@ void PostgreSqlStorage::setUserModes(UserId user, NetworkId networkId, const QSt
     watchQuery(query);
 }
 
-
-BufferInfo PostgreSqlStorage::bufferInfo(UserId user, const NetworkId &networkId, BufferInfo::Type type, const QString &buffer, bool create)
+BufferInfo PostgreSqlStorage::bufferInfo(UserId user, const NetworkId& networkId, BufferInfo::Type type, const QString& buffer, bool create)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
         qWarning() << "PostgreSqlStorage::bufferInfo(): cannot start read only transaction!";
         qWarning() << " -" << qPrintable(db.lastError().text());
-        return BufferInfo();
+        return {};
     }
 
     QSqlQuery query(db);
@@ -1142,7 +1152,7 @@ BufferInfo PostgreSqlStorage::bufferInfo(UserId user, const NetworkId &networkId
 
     if (!create) {
         db.rollback();
-        return BufferInfo();
+        return {};
     }
 
     QSqlQuery createQuery(db);
@@ -1169,8 +1179,7 @@ BufferInfo PostgreSqlStorage::bufferInfo(UserId user, const NetworkId &networkId
     return bufferInfo;
 }
 
-
-BufferInfo PostgreSqlStorage::getBufferInfo(UserId user, const BufferId &bufferId)
+BufferInfo PostgreSqlStorage::getBufferInfo(UserId user, const BufferId& bufferId)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("select_buffer_by_id"));
@@ -1178,21 +1187,24 @@ BufferInfo PostgreSqlStorage::getBufferInfo(UserId user, const BufferId &bufferI
     query.bindValue(":bufferid", bufferId.toInt());
     safeExec(query);
     if (!watchQuery(query))
-        return BufferInfo();
+        return {};
 
     if (!query.first())
-        return BufferInfo();
+        return {};
 
-    BufferInfo bufferInfo(query.value(0).toInt(), query.value(1).toInt(), (BufferInfo::Type)query.value(2).toInt(), 0, query.value(4).toString());
+    BufferInfo bufferInfo(query.value(0).toInt(),
+                          query.value(1).toInt(),
+                          (BufferInfo::Type)query.value(2).toInt(),
+                          0,
+                          query.value(4).toString());
     Q_ASSERT(!query.next());
 
     return bufferInfo;
 }
 
-
-QList<BufferInfo> PostgreSqlStorage::requestBuffers(UserId user)
+std::vector<BufferInfo> PostgreSqlStorage::requestBuffers(UserId user)
 {
-    QList<BufferInfo> bufferlist;
+    std::vector<BufferInfo> bufferlist;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -1208,16 +1220,19 @@ QList<BufferInfo> PostgreSqlStorage::requestBuffers(UserId user)
     safeExec(query);
     watchQuery(query);
     while (query.next()) {
-        bufferlist << BufferInfo(query.value(0).toInt(), query.value(1).toInt(), (BufferInfo::Type)query.value(2).toInt(), query.value(3).toInt(), query.value(4).toString());
+        bufferlist.emplace_back(query.value(0).toInt(),
+                                query.value(1).toInt(),
+                                (BufferInfo::Type)query.value(2).toInt(),
+                                query.value(3).toInt(),
+                                query.value(4).toString());
     }
     db.commit();
     return bufferlist;
 }
 
-
-QList<BufferId> PostgreSqlStorage::requestBufferIdsForNetwork(UserId user, NetworkId networkId)
+std::vector<BufferId> PostgreSqlStorage::requestBufferIdsForNetwork(UserId user, NetworkId networkId)
 {
-    QList<BufferId> bufferList;
+    std::vector<BufferId> bufferList;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -1234,14 +1249,13 @@ QList<BufferId> PostgreSqlStorage::requestBufferIdsForNetwork(UserId user, Netwo
     safeExec(query);
     watchQuery(query);
     while (query.next()) {
-        bufferList << BufferId(query.value(0).toInt());
+        bufferList.emplace_back(query.value(0).toInt());
     }
     db.commit();
     return bufferList;
 }
 
-
-bool PostgreSqlStorage::removeBuffer(const UserId &user, const BufferId &bufferId)
+bool PostgreSqlStorage::removeBuffer(const UserId& user, const BufferId& bufferId)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -1269,14 +1283,14 @@ bool PostgreSqlStorage::removeBuffer(const UserId &user, const BufferId &bufferI
         return true;
     default:
         // there was more then one buffer deleted...
-        qWarning() << "PostgreSqlStorage::removeBuffer(): Userid" << user << "BufferId" << "caused deletion of" << numRows << "Buffers! Rolling back transaction...";
+        qWarning() << "PostgreSqlStorage::removeBuffer(): Userid" << user << "BufferId"
+                   << "caused deletion of" << numRows << "Buffers! Rolling back transaction...";
         db.rollback();
         return false;
     }
 }
 
-
-bool PostgreSqlStorage::renameBuffer(const UserId &user, const BufferId &bufferId, const QString &newName)
+bool PostgreSqlStorage::renameBuffer(const UserId& user, const BufferId& bufferId, const QString& newName)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -1306,14 +1320,14 @@ bool PostgreSqlStorage::renameBuffer(const UserId &user, const BufferId &bufferI
         return true;
     default:
         // there was more then one buffer deleted...
-        qWarning() << "PostgreSqlStorage::renameBuffer(): Userid" << user << "BufferId" << "affected" << numRows << "Buffers! Rolling back transaction...";
+        qWarning() << "PostgreSqlStorage::renameBuffer(): Userid" << user << "BufferId"
+                   << "affected" << numRows << "Buffers! Rolling back transaction...";
         db.rollback();
         return false;
     }
 }
 
-
-bool PostgreSqlStorage::mergeBuffersPermanently(const UserId &user, const BufferId &bufferId1, const BufferId &bufferId2)
+bool PostgreSqlStorage::mergeBuffersPermanently(const UserId& user, const BufferId& bufferId1, const BufferId& bufferId2)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -1363,8 +1377,35 @@ bool PostgreSqlStorage::mergeBuffersPermanently(const UserId &user, const Buffer
     return true;
 }
 
+QHash<BufferId, MsgId> PostgreSqlStorage::bufferLastMsgIds(UserId user)
+{
+    QHash<BufferId, MsgId> lastMsgHash;
 
-void PostgreSqlStorage::setBufferLastSeenMsg(UserId user, const BufferId &bufferId, const MsgId &msgId)
+    QSqlDatabase db = logDb();
+    if (!beginReadOnlyTransaction(db)) {
+        qWarning() << "PostgreSqlStorage::bufferLastMsgIds(): cannot start read only transaction!";
+        qWarning() << " -" << qPrintable(db.lastError().text());
+        return lastMsgHash;
+    }
+
+    QSqlQuery query(db);
+    query.prepare(queryString("select_buffer_last_messages"));
+    query.bindValue(":userid", user.toInt());
+    safeExec(query);
+    if (!watchQuery(query)) {
+        db.rollback();
+        return lastMsgHash;
+    }
+
+    while (query.next()) {
+        lastMsgHash[query.value(0).toInt()] = query.value(1).toLongLong();
+    }
+
+    db.commit();
+    return lastMsgHash;
+}
+
+void PostgreSqlStorage::setBufferLastSeenMsg(UserId user, const BufferId& bufferId, const MsgId& msgId)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_buffer_lastseen"));
@@ -1375,7 +1416,6 @@ void PostgreSqlStorage::setBufferLastSeenMsg(UserId user, const BufferId &buffer
     safeExec(query);
     watchQuery(query);
 }
-
 
 QHash<BufferId, MsgId> PostgreSqlStorage::bufferLastSeenMsgIds(UserId user)
 {
@@ -1405,8 +1445,7 @@ QHash<BufferId, MsgId> PostgreSqlStorage::bufferLastSeenMsgIds(UserId user)
     return lastSeenHash;
 }
 
-
-void PostgreSqlStorage::setBufferMarkerLineMsg(UserId user, const BufferId &bufferId, const MsgId &msgId)
+void PostgreSqlStorage::setBufferMarkerLineMsg(UserId user, const BufferId& bufferId, const MsgId& msgId)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_buffer_markerlinemsgid"));
@@ -1417,7 +1456,6 @@ void PostgreSqlStorage::setBufferMarkerLineMsg(UserId user, const BufferId &buff
     safeExec(query);
     watchQuery(query);
 }
-
 
 QHash<BufferId, MsgId> PostgreSqlStorage::bufferMarkerLineMsgIds(UserId user)
 {
@@ -1447,7 +1485,6 @@ QHash<BufferId, MsgId> PostgreSqlStorage::bufferMarkerLineMsgIds(UserId user)
     return markerLineHash;
 }
 
-
 void PostgreSqlStorage::setBufferActivity(UserId user, BufferId bufferId, Message::Types bufferActivity)
 {
     QSqlQuery query(logDb());
@@ -1455,7 +1492,7 @@ void PostgreSqlStorage::setBufferActivity(UserId user, BufferId bufferId, Messag
 
     query.bindValue(":userid", user.toInt());
     query.bindValue(":bufferid", bufferId.toInt());
-    query.bindValue(":bufferactivity", (int) bufferActivity);
+    query.bindValue(":bufferactivity", (int)bufferActivity);
     safeExec(query);
     watchQuery(query);
 }
@@ -1496,13 +1533,13 @@ Message::Types PostgreSqlStorage::bufferActivity(BufferId bufferId, MsgId lastSe
     query.bindValue(":lastseenmsgid", lastSeenMsgId.toQint64());
     safeExec(query);
     watchQuery(query);
-    Message::Types result = Message::Types(0);
+    Message::Types result{};
     if (query.first())
         result = Message::Types(query.value(0).toInt());
     return result;
 }
 
-QHash<QString, QByteArray> PostgreSqlStorage::bufferCiphers(UserId user, const NetworkId &networkId)
+QHash<QString, QByteArray> PostgreSqlStorage::bufferCiphers(UserId user, const NetworkId& networkId)
 {
     QHash<QString, QByteArray> bufferCiphers;
 
@@ -1528,7 +1565,7 @@ QHash<QString, QByteArray> PostgreSqlStorage::bufferCiphers(UserId user, const N
     return bufferCiphers;
 }
 
-void PostgreSqlStorage::setBufferCipher(UserId user, const NetworkId &networkId, const QString &bufferName, const QByteArray &cipher)
+void PostgreSqlStorage::setBufferCipher(UserId user, const NetworkId& networkId, const QString& bufferName, const QByteArray& cipher)
 {
     QSqlQuery query(logDb());
     query.prepare(queryString("update_buffer_cipher"));
@@ -1539,7 +1576,6 @@ void PostgreSqlStorage::setBufferCipher(UserId user, const NetworkId &networkId,
     safeExec(query);
     watchQuery(query);
 }
-
 
 void PostgreSqlStorage::setHighlightCount(UserId user, BufferId bufferId, int highlightcount)
 {
@@ -1589,13 +1625,13 @@ int PostgreSqlStorage::highlightCount(BufferId bufferId, MsgId lastSeenMsgId)
     query.bindValue(":lastseenmsgid", lastSeenMsgId.toQint64());
     safeExec(query);
     watchQuery(query);
-    int result = int(0);
+    auto result = int(0);
     if (query.first())
         result = query.value(0).toInt();
     return result;
 }
 
-bool PostgreSqlStorage::logMessage(Message &msg)
+bool PostgreSqlStorage::logMessage(Message& msg)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -1605,9 +1641,7 @@ bool PostgreSqlStorage::logMessage(Message &msg)
     }
 
     QVariantList senderParams;
-    senderParams << msg.sender()
-                 << msg.realName()
-                 << msg.avatarUrl();
+    senderParams << msg.sender() << msg.realName() << msg.avatarUrl();
     QSqlQuery getSenderIdQuery = executePreparedQuery("select_senderid", senderParams, db);
     qint64 senderId;
     if (getSenderIdQuery.first()) {
@@ -1636,12 +1670,7 @@ bool PostgreSqlStorage::logMessage(Message &msg)
     QVariantList params;
     // PostgreSQL handles QDateTime()'s serialized format by default, and QDateTime() serializes
     // to a 64-bit time compatible format by default.
-    params << msg.timestamp()
-           << msg.bufferInfo().bufferId().toInt()
-           << msg.type()
-           << (int)msg.flags()
-           << senderId
-           << msg.senderPrefixes()
+    params << msg.timestamp() << msg.bufferInfo().bufferId().toInt() << msg.type() << (int)msg.flags() << senderId << msg.senderPrefixes()
            << msg.contents();
     QSqlQuery logMessageQuery = executePreparedQuery("insert_message", params, db);
 
@@ -1662,8 +1691,7 @@ bool PostgreSqlStorage::logMessage(Message &msg)
     }
 }
 
-
-bool PostgreSqlStorage::logMessages(MessageList &msgs)
+bool PostgreSqlStorage::logMessages(MessageList& msgs)
 {
     QSqlDatabase db = logDb();
     if (!beginTransaction(db)) {
@@ -1675,19 +1703,18 @@ bool PostgreSqlStorage::logMessages(MessageList &msgs)
     QList<int> senderIdList;
     QHash<SenderData, qint64> senderIds;
     QSqlQuery addSenderQuery;
-    QSqlQuery selectSenderQuery;;
+    QSqlQuery selectSenderQuery;
+    ;
     for (int i = 0; i < msgs.count(); i++) {
-        auto &msg = msgs.at(i);
-        SenderData sender = { msg.sender(), msg.realName(), msg.avatarUrl() };
+        auto& msg = msgs.at(i);
+        SenderData sender = {msg.sender(), msg.realName(), msg.avatarUrl()};
         if (senderIds.contains(sender)) {
             senderIdList << senderIds[sender];
             continue;
         }
 
         QVariantList senderParams;
-        senderParams << sender.sender
-                     << sender.realname
-                     << sender.avatarurl;
+        senderParams << sender.sender << sender.realname << sender.avatarurl;
 
         selectSenderQuery = executePreparedQuery("select_senderid", senderParams, db);
         if (selectSenderQuery.first()) {
@@ -1718,17 +1745,12 @@ bool PostgreSqlStorage::logMessages(MessageList &msgs)
     // yes we loop twice over the same list. This avoids alternating queries.
     bool error = false;
     for (int i = 0; i < msgs.count(); i++) {
-        Message &msg = msgs[i];
+        Message& msg = msgs[i];
         QVariantList params;
         // PostgreSQL handles QDateTime()'s serialized format by default, and QDateTime() serializes
         // to a 64-bit time compatible format by default.
-        params << msg.timestamp()
-               << msg.bufferInfo().bufferId().toInt()
-               << msg.type()
-               << (int)msg.flags()
-               << senderIdList.at(i)
-               << msg.senderPrefixes()
-               << msg.contents();
+        params << msg.timestamp() << msg.bufferInfo().bufferId().toInt() << msg.type() << (int)msg.flags() << senderIdList.at(i)
+               << msg.senderPrefixes() << msg.contents();
         QSqlQuery logMessageQuery = executePreparedQuery("insert_message", params, db);
         if (!watchQuery(logMessageQuery)) {
             db.rollback();
@@ -1753,10 +1775,9 @@ bool PostgreSqlStorage::logMessages(MessageList &msgs)
     return true;
 }
 
-
-QList<Message> PostgreSqlStorage::requestMsgs(UserId user, BufferId bufferId, MsgId first, MsgId last, int limit)
+std::vector<Message> PostgreSqlStorage::requestMsgs(UserId user, BufferId bufferId, MsgId first, MsgId last, int limit)
 {
-    QList<Message> messagelist;
+    std::vector<Message> messagelist;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -1806,26 +1827,26 @@ QList<Message> PostgreSqlStorage::requestMsgs(UserId user, BufferId bufferId, Ms
         timestamp = query.value(1).toDateTime();
         timestamp.setTimeSpec(Qt::UTC);
         Message msg(timestamp,
-            bufferInfo,
-            (Message::Type)query.value(2).toInt(),
-            query.value(8).toString(),
-            query.value(4).toString(),
-            query.value(5).toString(),
-            query.value(6).toString(),
-            query.value(7).toString(),
-            (Message::Flags)query.value(3).toInt());
+                    bufferInfo,
+                    (Message::Type)query.value(2).toInt(),
+                    query.value(8).toString(),
+                    query.value(4).toString(),
+                    query.value(5).toString(),
+                    query.value(6).toString(),
+                    query.value(7).toString(),
+                    (Message::Flags)query.value(3).toInt());
         msg.setMsgId(query.value(0).toLongLong());
-        messagelist << msg;
+        messagelist.push_back(std::move(msg));
     }
 
     db.commit();
     return messagelist;
 }
 
-
-QList<Message> PostgreSqlStorage::requestMsgsFiltered(UserId user, BufferId bufferId, MsgId first, MsgId last, int limit, Message::Types type, Message::Flags flags)
+std::vector<Message> PostgreSqlStorage::requestMsgsFiltered(
+    UserId user, BufferId bufferId, MsgId first, MsgId last, int limit, Message::Types type, Message::Flags flags)
 {
-    QList<Message> messagelist;
+    std::vector<Message> messagelist;
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -1843,10 +1864,12 @@ QList<Message> PostgreSqlStorage::requestMsgsFiltered(UserId user, BufferId buff
     QSqlQuery query(db);
     if (last == -1 && first == -1) {
         query.prepare(queryString("select_messagesNewestK_filtered"));
-    } else if (last == -1) {
+    }
+    else if (last == -1) {
         query.prepare(queryString("select_messagesNewerThan_filtered"));
         query.bindValue(":first", first.toQint64());
-    } else {
+    }
+    else {
         query.prepare(queryString("select_messagesRange_filtered"));
         query.bindValue(":last", last.toQint64());
         query.bindValue(":first", first.toQint64());
@@ -1881,21 +1904,96 @@ QList<Message> PostgreSqlStorage::requestMsgsFiltered(UserId user, BufferId buff
                     query.value(7).toString(),
                     Message::Flags{query.value(3).toInt()});
         msg.setMsgId(query.value(0).toLongLong());
-        messagelist << msg;
+        messagelist.push_back(std::move(msg));
     }
 
     db.commit();
     return messagelist;
 }
 
-
-QList<Message> PostgreSqlStorage::requestAllMsgs(UserId user, MsgId first, MsgId last, int limit)
+std::vector<Message> PostgreSqlStorage::requestMsgsForward(
+    UserId user, BufferId bufferId, MsgId first, MsgId last, int limit, Message::Types type, Message::Flags flags)
 {
-    QList<Message> messagelist;
+    std::vector<Message> messagelist;
+
+    QSqlDatabase db = logDb();
+    if (!beginReadOnlyTransaction(db)) {
+        qWarning() << "PostgreSqlStorage::requestMsgsForward(): cannot start read only transaction!";
+        qWarning() << " -" << qPrintable(db.lastError().text());
+        return messagelist;
+    }
+
+    BufferInfo bufferInfo = getBufferInfo(user, bufferId);
+    if (!bufferInfo.isValid()) {
+        db.rollback();
+        return messagelist;
+    }
+
+    QString queryName;
+    QVariantList params;
+
+    if (first == -1) {
+        params << std::numeric_limits<qint64>::min();
+    } else {
+        params << first.toQint64();
+    }
+
+    if (last == -1) {
+        params << std::numeric_limits<qint64>::max();
+    } else {
+        params << last.toQint64();
+    }
+
+    params << bufferId.toInt();
+
+    int typeRaw = type;
+    int flagsRaw = flags;
+    params << typeRaw;
+    params << flagsRaw;
+
+    if (limit != -1)
+        params << limit;
+    else
+        params << QVariant(QVariant::Int);
+
+    QSqlQuery query = executePreparedQuery("select_messagesForward", params, db);
+
+    if (!watchQuery(query)) {
+        qDebug() << "select_messages failed";
+        db.rollback();
+        return messagelist;
+    }
+
+    QDateTime timestamp;
+    while (query.next()) {
+        // PostgreSQL returns date/time in ISO 8601 format, no 64-bit handling needed
+        // See https://www.postgresql.org/docs/current/static/datatype-datetime.html#DATATYPE-DATETIME-OUTPUT
+        timestamp = query.value(1).toDateTime();
+        timestamp.setTimeSpec(Qt::UTC);
+        Message msg(timestamp,
+                    bufferInfo,
+                    (Message::Type)query.value(2).toInt(),
+                    query.value(8).toString(),
+                    query.value(4).toString(),
+                    query.value(5).toString(),
+                    query.value(6).toString(),
+                    query.value(7).toString(),
+                    (Message::Flags)query.value(3).toInt());
+        msg.setMsgId(query.value(0).toLongLong());
+        messagelist.push_back(std::move(msg));
+    }
+
+    db.commit();
+    return messagelist;
+}
+
+std::vector<Message> PostgreSqlStorage::requestAllMsgs(UserId user, MsgId first, MsgId last, int limit)
+{
+    std::vector<Message> messagelist;
 
     // requestBuffers uses it's own transaction.
     QHash<BufferId, BufferInfo> bufferInfoHash;
-    foreach(BufferInfo bufferInfo, requestBuffers(user)) {
+    foreach (BufferInfo bufferInfo, requestBuffers(user)) {
         bufferInfoHash[bufferInfo.bufferId()] = bufferInfo;
     }
 
@@ -1929,32 +2027,32 @@ QList<Message> PostgreSqlStorage::requestAllMsgs(UserId user, MsgId first, MsgId
         timestamp = query.value(2).toDateTime();
         timestamp.setTimeSpec(Qt::UTC);
         Message msg(timestamp,
-            bufferInfoHash[query.value(1).toInt()],
-            (Message::Type)query.value(3).toInt(),
-            query.value(9).toString(),
-            query.value(5).toString(),
-            query.value(6).toString(),
-            query.value(7).toString(),
-            query.value(8).toString(),
-            (Message::Flags)query.value(4).toInt());
+                    bufferInfoHash[query.value(1).toInt()],
+                    (Message::Type)query.value(3).toInt(),
+                    query.value(9).toString(),
+                    query.value(5).toString(),
+                    query.value(6).toString(),
+                    query.value(7).toString(),
+                    query.value(8).toString(),
+                    (Message::Flags)query.value(4).toInt());
         msg.setMsgId(query.value(0).toLongLong());
-        messagelist << msg;
+        messagelist.push_back(std::move(msg));
     }
 
     db.commit();
     return messagelist;
 }
 
-
-QList<Message> PostgreSqlStorage::requestAllMsgsFiltered(UserId user, MsgId first, MsgId last, int limit, Message::Types type, Message::Flags flags)
+std::vector<Message> PostgreSqlStorage::requestAllMsgsFiltered(
+    UserId user, MsgId first, MsgId last, int limit, Message::Types type, Message::Flags flags)
 {
-    QList<Message> messagelist;
+    std::vector<Message> messagelist;
 
     // requestBuffers uses it's own transaction.
     QHash<BufferId, BufferInfo> bufferInfoHash;
-            foreach(BufferInfo bufferInfo, requestBuffers(user)) {
-            bufferInfoHash[bufferInfo.bufferId()] = bufferInfo;
-        }
+    foreach (BufferInfo bufferInfo, requestBuffers(user)) {
+        bufferInfoHash[bufferInfo.bufferId()] = bufferInfo;
+    }
 
     QSqlDatabase db = logDb();
     if (!beginReadOnlyTransaction(db)) {
@@ -2002,7 +2100,7 @@ QList<Message> PostgreSqlStorage::requestAllMsgsFiltered(UserId user, MsgId firs
                     query.value(8).toString(),
                     Message::Flags{query.value(4).toInt()});
         msg.setMsgId(query.value(0).toLongLong());
-        messagelist << msg;
+        messagelist.push_back(std::move(msg));
     }
 
     db.commit();
@@ -2022,7 +2120,6 @@ QMap<UserId, QString> PostgreSqlStorage::getAllAuthUserNames()
     }
     return authusernames;
 }
-
 
 // void PostgreSqlStorage::safeExec(QSqlQuery &query) {
 //   qDebug() << "PostgreSqlStorage::safeExec";
@@ -2047,8 +2144,7 @@ QMap<UserId, QString> PostgreSqlStorage::getAllAuthUserNames()
 //   return;
 // }
 
-
-bool PostgreSqlStorage::beginTransaction(QSqlDatabase &db)
+bool PostgreSqlStorage::beginTransaction(QSqlDatabase& db)
 {
     bool result = db.transaction();
     if (!db.isOpen()) {
@@ -2058,7 +2154,7 @@ bool PostgreSqlStorage::beginTransaction(QSqlDatabase &db)
     return result;
 }
 
-bool PostgreSqlStorage::beginReadOnlyTransaction(QSqlDatabase &db)
+bool PostgreSqlStorage::beginReadOnlyTransaction(QSqlDatabase& db)
 {
     QSqlQuery query = db.exec("BEGIN TRANSACTION READ ONLY");
     if (!db.isOpen()) {
@@ -2068,8 +2164,7 @@ bool PostgreSqlStorage::beginReadOnlyTransaction(QSqlDatabase &db)
     return !query.lastError().isValid();
 }
 
-
-QSqlQuery PostgreSqlStorage::prepareAndExecuteQuery(const QString &queryname, const QString &paramstring, QSqlDatabase &db)
+QSqlQuery PostgreSqlStorage::prepareAndExecuteQuery(const QString& queryname, const QString& paramstring, QSqlDatabase& db)
 {
     // Query preparing is done lazily. That means that instead of always checking if the query is already prepared
     // we just EXECUTE and catch the error
@@ -2088,18 +2183,21 @@ QSqlQuery PostgreSqlStorage::prepareAndExecuteQuery(const QString &queryname, co
         if (!db.isOpen()) {
             db = logDb();
             if (!beginTransaction(db)) {
-                qWarning() << "PostgreSqlStorage::prepareAndExecuteQuery(): cannot start transaction while recovering from connection loss!";
+                qWarning()
+                    << "PostgreSqlStorage::prepareAndExecuteQuery(): cannot start transaction while recovering from connection loss!";
                 qWarning() << " -" << qPrintable(db.lastError().text());
                 return query;
             }
             db.exec("SAVEPOINT quassel_prepare_query");
-        } else {
+        }
+        else {
             db.exec("ROLLBACK TO SAVEPOINT quassel_prepare_query");
         }
 
         // and once again: Qt leaves us without error codes so we either parse (language dependent(!)) strings
         // or we just guess the error. As we're only interested in unprepared queries, this will be our guess. :)
-        QSqlQuery checkQuery = db.exec(QString("SELECT count(name) FROM pg_prepared_statements WHERE name = 'quassel_%1' AND from_sql = TRUE").arg(queryname.toLower()));
+        QSqlQuery checkQuery = db.exec(
+            QString("SELECT count(name) FROM pg_prepared_statements WHERE name = 'quassel_%1' AND from_sql = TRUE").arg(queryname.toLower()));
         checkQuery.first();
         if (checkQuery.value(0).toInt() == 0) {
             db.exec(QString("PREPARE quassel_%1 AS %2").arg(queryname).arg(queryString(queryname)));
@@ -2127,15 +2225,14 @@ QSqlQuery PostgreSqlStorage::prepareAndExecuteQuery(const QString &queryname, co
     return query;
 }
 
-
-QSqlQuery PostgreSqlStorage::executePreparedQuery(const QString &queryname, const QVariantList &params, QSqlDatabase &db)
+QSqlQuery PostgreSqlStorage::executePreparedQuery(const QString& queryname, const QVariantList& params, QSqlDatabase& db)
 {
-    QSqlDriver *driver = db.driver();
+    QSqlDriver* driver = db.driver();
 
     QStringList paramStrings;
     QSqlField field;
     for (int i = 0; i < params.count(); i++) {
-        const QVariant &value = params.at(i);
+        const QVariant& value = params.at(i);
         field.setType(value.type());
         if (value.isNull())
             field.clear();
@@ -2153,8 +2250,7 @@ QSqlQuery PostgreSqlStorage::executePreparedQuery(const QString &queryname, cons
     }
 }
 
-
-QSqlQuery PostgreSqlStorage::executePreparedQuery(const QString &queryname, const QVariant &param, QSqlDatabase &db)
+QSqlQuery PostgreSqlStorage::executePreparedQuery(const QString& queryname, const QVariant& param, QSqlDatabase& db)
 {
     QSqlField field;
     field.setType(param.type());
@@ -2167,27 +2263,23 @@ QSqlQuery PostgreSqlStorage::executePreparedQuery(const QString &queryname, cons
     return prepareAndExecuteQuery(queryname, paramString, db);
 }
 
-
-void PostgreSqlStorage::deallocateQuery(const QString &queryname, const QSqlDatabase &db)
+void PostgreSqlStorage::deallocateQuery(const QString& queryname, const QSqlDatabase& db)
 {
     db.exec(QString("DEALLOCATE quassel_%1").arg(queryname));
 }
 
-
-void PostgreSqlStorage::safeExec(QSqlQuery &query)
+void PostgreSqlStorage::safeExec(QSqlQuery& query)
 {
     // If the query fails due to the connection being gone, it seems to cause
     // exec() to return false but no lastError to be set
-    if(!query.exec() && !query.lastError().isValid())
-    {
+    if (!query.exec() && !query.lastError().isValid()) {
         QSqlDatabase db = logDb();
         QSqlQuery retryQuery(db);
         retryQuery.prepare(query.lastQuery());
         QMapIterator<QString, QVariant> i(query.boundValues());
-        while (i.hasNext())
-        {
+        while (i.hasNext()) {
             i.next();
-            retryQuery.bindValue(i.key(),i.value());
+            retryQuery.bindValue(i.key(), i.value());
         }
         query = retryQuery;
         query.exec();
@@ -2199,9 +2291,7 @@ void PostgreSqlStorage::safeExec(QSqlQuery &query)
 // ========================================
 PostgreSqlMigrationWriter::PostgreSqlMigrationWriter()
     : PostgreSqlStorage()
-{
-}
-
+{}
 
 bool PostgreSqlMigrationWriter::prepareQuery(MigrationObject mo)
 {
@@ -2243,9 +2333,8 @@ bool PostgreSqlMigrationWriter::prepareQuery(MigrationObject mo)
     return true;
 }
 
-
-//bool PostgreSqlMigrationWriter::writeUser(const QuasselUserMO &user) {
-bool PostgreSqlMigrationWriter::writeMo(const QuasselUserMO &user)
+// bool PostgreSqlMigrationWriter::writeUser(const QuasselUserMO &user) {
+bool PostgreSqlMigrationWriter::writeMo(const QuasselUserMO& user)
 {
     bindValue(0, user.id.toInt());
     bindValue(1, user.username);
@@ -2255,9 +2344,8 @@ bool PostgreSqlMigrationWriter::writeMo(const QuasselUserMO &user)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeSender(const SenderMO &sender) {
-bool PostgreSqlMigrationWriter::writeMo(const SenderMO &sender)
+// bool PostgreSqlMigrationWriter::writeSender(const SenderMO &sender) {
+bool PostgreSqlMigrationWriter::writeMo(const SenderMO& sender)
 {
     bindValue(0, sender.senderId);
     bindValue(1, sender.sender);
@@ -2266,9 +2354,8 @@ bool PostgreSqlMigrationWriter::writeMo(const SenderMO &sender)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeIdentity(const IdentityMO &identity) {
-bool PostgreSqlMigrationWriter::writeMo(const IdentityMO &identity)
+// bool PostgreSqlMigrationWriter::writeIdentity(const IdentityMO &identity) {
+bool PostgreSqlMigrationWriter::writeMo(const IdentityMO& identity)
 {
     _validIdentities << identity.id.toInt();
     bindValue(0, identity.id.toInt());
@@ -2295,9 +2382,8 @@ bool PostgreSqlMigrationWriter::writeMo(const IdentityMO &identity)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeIdentityNick(const IdentityNickMO &identityNick) {
-bool PostgreSqlMigrationWriter::writeMo(const IdentityNickMO &identityNick)
+// bool PostgreSqlMigrationWriter::writeIdentityNick(const IdentityNickMO &identityNick) {
+bool PostgreSqlMigrationWriter::writeMo(const IdentityNickMO& identityNick)
 {
     bindValue(0, identityNick.nickid);
     bindValue(1, identityNick.identityId.toInt());
@@ -2305,9 +2391,8 @@ bool PostgreSqlMigrationWriter::writeMo(const IdentityNickMO &identityNick)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeNetwork(const NetworkMO &network) {
-bool PostgreSqlMigrationWriter::writeMo(const NetworkMO &network)
+// bool PostgreSqlMigrationWriter::writeNetwork(const NetworkMO &network) {
+bool PostgreSqlMigrationWriter::writeMo(const NetworkMO& network)
 {
     bindValue(0, network.networkid.toInt());
     bindValue(1, network.userid.toInt());
@@ -2342,12 +2427,13 @@ bool PostgreSqlMigrationWriter::writeMo(const NetworkMO &network)
     bindValue(26, network.messagerateburstsize);
     bindValue(27, network.messageratedelay);
     bindValue(28, network.unlimitedmessagerate);
+    // Skipped IRCv3 caps
+    bindValue(29, network.skipcaps);
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeBuffer(const BufferMO &buffer) {
-bool PostgreSqlMigrationWriter::writeMo(const BufferMO &buffer)
+// bool PostgreSqlMigrationWriter::writeBuffer(const BufferMO &buffer) {
+bool PostgreSqlMigrationWriter::writeMo(const BufferMO& buffer)
 {
     bindValue(0, buffer.bufferid.toInt());
     bindValue(1, buffer.userid.toInt());
@@ -2367,9 +2453,8 @@ bool PostgreSqlMigrationWriter::writeMo(const BufferMO &buffer)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeBacklog(const BacklogMO &backlog) {
-bool PostgreSqlMigrationWriter::writeMo(const BacklogMO &backlog)
+// bool PostgreSqlMigrationWriter::writeBacklog(const BacklogMO &backlog) {
+bool PostgreSqlMigrationWriter::writeMo(const BacklogMO& backlog)
 {
     bindValue(0, backlog.messageid.toQint64());
     bindValue(1, backlog.time);
@@ -2382,9 +2467,8 @@ bool PostgreSqlMigrationWriter::writeMo(const BacklogMO &backlog)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeIrcServer(const IrcServerMO &ircserver) {
-bool PostgreSqlMigrationWriter::writeMo(const IrcServerMO &ircserver)
+// bool PostgreSqlMigrationWriter::writeIrcServer(const IrcServerMO &ircserver) {
+bool PostgreSqlMigrationWriter::writeMo(const IrcServerMO& ircserver)
 {
     bindValue(0, ircserver.serverid);
     bindValue(1, ircserver.userid.toInt());
@@ -2404,9 +2488,8 @@ bool PostgreSqlMigrationWriter::writeMo(const IrcServerMO &ircserver)
     return exec();
 }
 
-
-//bool PostgreSqlMigrationWriter::writeUserSetting(const UserSettingMO &userSetting) {
-bool PostgreSqlMigrationWriter::writeMo(const UserSettingMO &userSetting)
+// bool PostgreSqlMigrationWriter::writeUserSetting(const UserSettingMO &userSetting) {
+bool PostgreSqlMigrationWriter::writeMo(const UserSettingMO& userSetting)
 {
     bindValue(0, userSetting.userid.toInt());
     bindValue(1, userSetting.settingname);
@@ -2414,26 +2497,20 @@ bool PostgreSqlMigrationWriter::writeMo(const UserSettingMO &userSetting)
     return exec();
 }
 
-bool PostgreSqlMigrationWriter::writeMo(const CoreStateMO &coreState)
+bool PostgreSqlMigrationWriter::writeMo(const CoreStateMO& coreState)
 {
     bindValue(0, coreState.key);
     bindValue(1, coreState.value);
     return exec();
 }
 
-
 bool PostgreSqlMigrationWriter::postProcess()
 {
     QSqlDatabase db = logDb();
     QList<Sequence> sequences;
-    sequences << Sequence("backlog", "messageid")
-              << Sequence("buffer", "bufferid")
-              << Sequence("identity", "identityid")
-              << Sequence("identity_nick", "nickid")
-              << Sequence("ircserver", "serverid")
-              << Sequence("network", "networkid")
-              << Sequence("quasseluser", "userid")
-              << Sequence("sender", "senderid");
+    sequences << Sequence("backlog", "messageid") << Sequence("buffer", "bufferid") << Sequence("identity", "identityid")
+              << Sequence("identity_nick", "nickid") << Sequence("ircserver", "serverid") << Sequence("network", "networkid")
+              << Sequence("quasseluser", "userid") << Sequence("sender", "senderid");
     QList<Sequence>::const_iterator iter;
     for (iter = sequences.constBegin(); iter != sequences.constEnd(); ++iter) {
         resetQuery();

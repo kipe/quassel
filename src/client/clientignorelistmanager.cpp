@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,28 +20,25 @@
 
 #include "clientignorelistmanager.h"
 
-INIT_SYNCABLE_OBJECT(ClientIgnoreListManager)
-
-ClientIgnoreListManager::ClientIgnoreListManager(QObject *parent)
+ClientIgnoreListManager::ClientIgnoreListManager(QObject* parent)
     : IgnoreListManager(parent)
 {
-    connect(this, SIGNAL(updatedRemotely()), SIGNAL(ignoreListChanged()));
+    connect(this, &SyncableObject::updatedRemotely, this, &ClientIgnoreListManager::ignoreListChanged);
 }
 
-
-bool ClientIgnoreListManager::pureMatch(const IgnoreListItem &item, const QString &string) const
+bool ClientIgnoreListManager::pureMatch(const IgnoreListItem& item, const QString& string) const
 {
     return (item.contentsMatcher().match(string));
 }
 
-
-QMap<QString, bool> ClientIgnoreListManager::matchingRulesForHostmask(const QString &hostmask, const QString &network, const QString &channel) const
+QMap<QString, bool> ClientIgnoreListManager::matchingRulesForHostmask(const QString& hostmask,
+                                                                      const QString& network,
+                                                                      const QString& channel) const
 {
     QMap<QString, bool> result;
-    foreach(IgnoreListItem item, ignoreList()) {
+    foreach (IgnoreListItem item, ignoreList()) {
         if (item.type() == SenderIgnore && pureMatch(item, hostmask)
-            && ((network.isEmpty() && channel.isEmpty())
-                || item.scope() == GlobalScope
+            && ((network.isEmpty() && channel.isEmpty()) || item.scope() == GlobalScope
                 || (item.scope() == NetworkScope && item.scopeRuleMatcher().match(network))
                 || (item.scope() == ChannelScope && item.scopeRuleMatcher().match(channel)))) {
             result[item.contents()] = item.isEnabled();

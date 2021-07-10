@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2005-2018 by the Quassel Project - devel@quassel-irc.org
+# Copyright (C) 2005-2020 by the Quassel Project - devel@quassel-irc.org
 # Licensed under GNU General Public License version 2, or (at your option)
 # version 3.
 #
@@ -9,8 +9,7 @@
 # whatever the current latest version is (e.g. 21 -> 22).
 #
 # NOTE: If you upgrade the database schema version, you must add upgrade
-# scripts and modify the existing setup queries, then regenerate sql.qrc with
-# 'updateSQLResource'.  See 'README.md' for details.
+# scripts and modify the existing setup queries.  See 'README.md' for details.
 
 TARGET_DIR="$1"
 # If not specified, assume current directory

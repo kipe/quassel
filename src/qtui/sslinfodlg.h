@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -37,21 +37,20 @@ class SslInfoDlg : public QDialog
     Q_OBJECT
 
 public:
-    SslInfoDlg(const QSslSocket *socket, QWidget *parent = 0);
-    inline const QSslSocket *socket() const { return _socket; }
+    SslInfoDlg(const QSslSocket* socket, QWidget* parent = nullptr);
+    inline const QSslSocket* socket() const { return _socket; }
 
 private slots:
     void setCurrentCert(int index);
 
 private:
     // simplify handling the API changes between Qt4 and Qt5 (QString -> QStringList)
-    QString subjectInfo(const QSslCertificate &cert, QSslCertificate::SubjectInfo subjectInfo) const;
-    QString issuerInfo(const QSslCertificate &cert, QSslCertificate::SubjectInfo subjectInfo) const;
+    QString subjectInfo(const QSslCertificate& cert, QSslCertificate::SubjectInfo subjectInfo) const;
+    QString issuerInfo(const QSslCertificate& cert, QSslCertificate::SubjectInfo subjectInfo) const;
 
 private:
     Ui::SslInfoDlg ui;
-    const QSslSocket *_socket;
+    const QSslSocket* _socket;
 };
-
 
 #endif

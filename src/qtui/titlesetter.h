@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,16 +30,15 @@ class TitleSetter : public AbstractItemView
     Q_OBJECT
 
 public:
-    TitleSetter(MainWin *parent);
+    TitleSetter(MainWin* parent);
 
 protected slots:
-    virtual void currentChanged(const QModelIndex &current, const QModelIndex &previous);
-    virtual void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight);
+    void currentChanged(const QModelIndex& current, const QModelIndex& previous) override;
+    void dataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight) override;
 
 private:
-    MainWin *_mainWin;
-    void changeWindowTitle(const QModelIndex &index);
+    MainWin* _mainWin;
+    void changeWindowTitle(const QModelIndex& index);
 };
-
 
 #endif

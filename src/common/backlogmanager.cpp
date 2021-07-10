@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,7 +20,6 @@
 
 #include "backlogmanager.h"
 
-INIT_SYNCABLE_OBJECT(BacklogManager)
 QVariantList BacklogManager::requestBacklog(BufferId bufferId, MsgId first, MsgId last, int limit, int additional)
 {
     REQUEST(ARG(bufferId), ARG(first), ARG(last), ARG(limit), ARG(additional))
@@ -30,6 +29,12 @@ QVariantList BacklogManager::requestBacklog(BufferId bufferId, MsgId first, MsgI
 QVariantList BacklogManager::requestBacklogFiltered(BufferId bufferId, MsgId first, MsgId last, int limit, int additional, int type, int flags)
 {
     REQUEST(ARG(bufferId), ARG(first), ARG(last), ARG(limit), ARG(additional), ARG(type), ARG(flags))
+    return QVariantList();
+}
+
+QVariantList BacklogManager::requestBacklogForward(BufferId bufferId, MsgId first, MsgId last, int limit, int type, int flags)
+{
+    REQUEST(ARG(bufferId), ARG(first), ARG(last), ARG(limit), ARG(type), ARG(flags))
     return QVariantList();
 }
 

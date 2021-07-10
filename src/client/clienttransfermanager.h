@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -27,13 +27,12 @@
 class ClientTransferManager : public TransferManager
 {
     Q_OBJECT
-    SYNCABLE_OBJECT
 
 public:
     using TransferManager::TransferManager;
 
 private slots:
-    void setTransferIds(const QList<QUuid> &transferIds) override;
-    void onCoreTransferAdded(const QUuid &uuid) override;
+    void setTransferIds(const QList<QUuid>& transferIds) override;
+    void onCoreTransferAdded(const QUuid& uuid) override;
     void onTransferInitDone();
 };

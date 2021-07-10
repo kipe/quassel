@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,13 +20,12 @@
 
 #include "backlogsettingspage.h"
 
-#include "qtui.h"
-#include "backlogsettings.h"
-
-// For backlog requester types
 #include "backlogrequester.h"
+#include "backlogsettings.h"
+#include "qtui.h"
+#include "widgethelpers.h"
 
-BacklogSettingsPage::BacklogSettingsPage(QWidget *parent)
+BacklogSettingsPage::BacklogSettingsPage(QWidget* parent)
     : SettingsPage(tr("Interface"), tr("Backlog Fetching"), parent)
 {
     ui.setupUi(this);
@@ -34,25 +33,23 @@ BacklogSettingsPage::BacklogSettingsPage(QWidget *parent)
     // not an auto widget, because we store index + 1
 
     // FIXME: global backlog requester disabled until issues ruled out
-    ui.requesterType->removeItem(2);
+    ui.requesterType->removeItem(3);
+    // If modifying ui.requesterType's item list, set to the index of "Globally unread messages"
 
-    connect(ui.requesterType, SIGNAL(currentIndexChanged(int)), this, SLOT(widgetHasChanged()));
+    connectToWidgetChangedSignal(ui.requesterType, this, &BacklogSettingsPage::widgetHasChanged);
 }
-
 
 bool BacklogSettingsPage::hasDefaults() const
 {
     return true;
 }
 
-
 void BacklogSettingsPage::defaults()
 {
-    ui.requesterType->setCurrentIndex(BacklogRequester::PerBufferUnread - 1);
+    ui.requesterType->setCurrentIndex(BacklogRequester::AsNeeded - 1);
 
     SettingsPage::defaults();
 }
-
 
 void BacklogSettingsPage::load()
 {
@@ -64,7 +61,6 @@ void BacklogSettingsPage::load()
     SettingsPage::load();
 }
 
-
 void BacklogSettingsPage::save()
 {
     BacklogSettings backlogSettings;
@@ -73,7 +69,6 @@ void BacklogSettingsPage::save()
 
     SettingsPage::save();
 }
-
 
 void BacklogSettingsPage::widgetHasChanged()
 {

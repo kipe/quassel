@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -30,15 +30,14 @@ class MainPage : public QWidget
     Q_OBJECT
 
 public:
-    MainPage(QWidget *parent = 0);
+    MainPage(QWidget* parent = nullptr);
 
 private slots:
     void showCoreConnectionDlg();
     void coreConnectionStateChanged();
 
 private:
-    QPushButton *_connectButton;
+    QPushButton* _connectButton;
 };
-
 
 #endif

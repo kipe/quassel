@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,8 +22,9 @@
 #define MAC_UTILS_H
 
 #include <QString>
+
 #include <CoreFoundation/CoreFoundation.h>
 
 QString CFStringToQString(CFStringRef str);
 
-#endif //MAC_UTILS_H
+#endif  // MAC_UTILS_H

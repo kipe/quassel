@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -29,42 +29,41 @@ class VerticalDockTitle : public QWidget
     Q_OBJECT
 
 public:
-    VerticalDockTitle(QDockWidget *parent);
+    VerticalDockTitle(QDockWidget* parent);
 
-    virtual QSize sizeHint() const;
-    virtual QSize minimumSizeHint() const;
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
     void show(bool show_);
 
 protected:
-    virtual void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent* event) override;
 
 private:
     bool _show;
 };
-
 
 class EmptyDockTitle : public QWidget
 {
     Q_OBJECT
 
 public:
-    inline EmptyDockTitle(QDockWidget *parent) : QWidget(parent) {}
+    inline EmptyDockTitle(QDockWidget* parent)
+        : QWidget(parent)
+    {}
 
-    inline virtual QSize sizeHint() const { return QSize(0, 0); }
+    inline QSize sizeHint() const override { return {0, 0}; }
 };
-
 
 class VerticalDock : public QDockWidget
 {
     Q_OBJECT
 
 public:
-    VerticalDock(const QString &title, QWidget *parent = 0, Qt::WindowFlags flags = 0);
-    VerticalDock(QWidget *parent = 0, Qt::WindowFlags flags = 0);
+    VerticalDock(const QString& title, QWidget* parent = nullptr, Qt::WindowFlags flags = {});
+    VerticalDock(QWidget* parent = nullptr, Qt::WindowFlags flags = {});
 
     void showTitle(bool show);
     void setDefaultTitleWidget();
 };
 
-
-#endif // VERTICALDOCKTITLE_H
+#endif  // VERTICALDOCKTITLE_H

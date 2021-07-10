@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,8 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#ifndef IRCCAP_H
-#define IRCCAP_H
+#pragma once
 
 #include <QString>
 #include <QStringList>
@@ -50,6 +49,13 @@ namespace IrcCap {
     const uint ACCOUNT_NOTIFY_WHOX_NUM = 369;
 
     /**
+     * Send account information as a tag with all commands sent by a user.
+     *
+     * http://ircv3.net/specs/extensions/account-notify-3.1.html
+     */
+    const QString ACCOUNT_TAG = "account-tag";
+
+    /**
      * Away change notification.
      *
      * http://ircv3.net/specs/extensions/away-notify-3.1.html
@@ -74,11 +80,32 @@ namespace IrcCap {
     const QString CHGHOST = "chghost";
 
     /**
+     * Server sending own messages back.
+     *
+     * https://ircv3.net/specs/extensions/echo-message-3.2.html
+     */
+    const QString ECHO_MESSAGE = "echo-message";
+
+    /**
      * Extended join information.
      *
      * http://ircv3.net/specs/extensions/extended-join-3.1.html
      */
     const QString EXTENDED_JOIN = "extended-join";
+
+    /**
+     * Standardized invite notifications.
+     *
+     * https://ircv3.net/specs/extensions/invite-notify-3.2
+     */
+    const QString INVITE_NOTIFY = "invite-notify";
+
+    /**
+     * Additional metadata on a per-message basis
+     *
+     * https://ircv3.net/specs/extensions/message-tags
+     */
+    const QString MESSAGE_TAGS = "message-tags";
 
     /**
      * Multiple mode prefixes in MODE and WHO replies.
@@ -95,11 +122,25 @@ namespace IrcCap {
     const QString SASL = "sasl";
 
     /**
+     * Allows updating realname without reconnecting
+     *
+     * https://ircv3.net/specs/extensions/setname
+     */
+    const QString SETNAME = "setname";
+
+    /**
      * Userhost in names replies.
      *
      * http://ircv3.net/specs/extensions/userhost-in-names-3.2.html
      */
     const QString USERHOST_IN_NAMES = "userhost-in-names";
+
+    /**
+     * Server time for messages.
+     *
+     * https://ircv3.net/specs/extensions/server-time-3.2.html
+     */
+    const QString SERVER_TIME = "server-time";
 
     /**
      * Vendor-specific capabilities
@@ -134,18 +175,22 @@ namespace IrcCap {
     /**
      * List of capabilities currently implemented and requested during capability negotiation.
      */
-    const QStringList knownCaps = QStringList {
-            ACCOUNT_NOTIFY,
-            AWAY_NOTIFY,
-            CAP_NOTIFY,
-            CHGHOST,
-            EXTENDED_JOIN,
-            MULTI_PREFIX,
-            SASL,
-            USERHOST_IN_NAMES,
-            Vendor::TWITCH_MEMBERSHIP,
-            Vendor::ZNC_SELF_MESSAGE
-    };
+    const QStringList knownCaps = QStringList{ACCOUNT_NOTIFY,
+                                              ACCOUNT_TAG,
+                                              AWAY_NOTIFY,
+                                              CAP_NOTIFY,
+                                              CHGHOST,
+                                              //ECHO_MESSAGE, // Postponed for message pending UI with batch + labeled-response
+                                              EXTENDED_JOIN,
+                                              INVITE_NOTIFY,
+                                              MESSAGE_TAGS,
+                                              MULTI_PREFIX,
+                                              SASL,
+                                              SETNAME,
+                                              USERHOST_IN_NAMES,
+                                              SERVER_TIME,
+                                              Vendor::TWITCH_MEMBERSHIP,
+                                              Vendor::ZNC_SELF_MESSAGE};
     // NOTE: If you modify the knownCaps list, update the constants above as needed.
 
     /**
@@ -165,5 +210,3 @@ namespace IrcCap {
         const QString EXTERNAL = "EXTERNAL";
     }
 }
-
-#endif // IRCCAP_H

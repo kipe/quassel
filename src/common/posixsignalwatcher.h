@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -36,7 +36,7 @@ class PosixSignalWatcher : public AbstractSignalWatcher
     Q_OBJECT
 
 public:
-    PosixSignalWatcher(QObject *parent = nullptr);
+    PosixSignalWatcher(QObject* parent = nullptr);
 
 private:
     static void signalHandler(int signal);
@@ -48,5 +48,5 @@ private slots:
 
 private:
     static int _sockpair[2];
-    QSocketNotifier *_notifier{nullptr};
+    QSocketNotifier* _notifier{nullptr};
 };

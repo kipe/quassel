@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,23 +20,20 @@
 
 #include "clientbacklogmanager.h"
 
-#include "abstractmessageprocessor.h"
-#include "backlogsettings.h"
-#include "backlogrequester.h"
-#include "client.h"
-
+#include <algorithm>
 #include <ctime>
 
 #include <QDebug>
 
-INIT_SYNCABLE_OBJECT(ClientBacklogManager)
-ClientBacklogManager::ClientBacklogManager(QObject *parent)
-    : BacklogManager(parent),
-    _requester(0),
-    _initBacklogRequested(false)
-{
-}
+#include "abstractmessageprocessor.h"
+#include "backlogrequester.h"
+#include "backlogsettings.h"
+#include "client.h"
+#include "util.h"
 
+ClientBacklogManager::ClientBacklogManager(QObject* parent)
+    : BacklogManager(parent)
+{}
 
 QVariantList ClientBacklogManager::requestBacklog(BufferId bufferId, MsgId first, MsgId last, int limit, int additional)
 {
@@ -44,15 +41,17 @@ QVariantList ClientBacklogManager::requestBacklog(BufferId bufferId, MsgId first
     return BacklogManager::requestBacklog(bufferId, first, last, limit, additional);
 }
 
-
 void ClientBacklogManager::receiveBacklog(BufferId bufferId, MsgId first, MsgId last, int limit, int additional, QVariantList msgs)
 {
-    Q_UNUSED(first) Q_UNUSED(last) Q_UNUSED(limit) Q_UNUSED(additional)
+    Q_UNUSED(first)
+    Q_UNUSED(last)
+    Q_UNUSED(limit)
+    Q_UNUSED(additional)
 
     emit messagesReceived(bufferId, msgs.count());
 
     MessageList msglist;
-    foreach(QVariant v, msgs) {
+    foreach (QVariant v, msgs) {
         Message msg = v.value<Message>();
         msg.setFlags(msg.flags() | Message::Backlog);
         msglist << msg;
@@ -71,13 +70,15 @@ void ClientBacklogManager::receiveBacklog(BufferId bufferId, MsgId first, MsgId 
     }
 }
 
-
 void ClientBacklogManager::receiveBacklogAll(MsgId first, MsgId last, int limit, int additional, QVariantList msgs)
 {
-    Q_UNUSED(first) Q_UNUSED(last) Q_UNUSED(limit) Q_UNUSED(additional)
+    Q_UNUSED(first)
+    Q_UNUSED(last)
+    Q_UNUSED(limit)
+    Q_UNUSED(additional)
 
     MessageList msglist;
-    foreach(QVariant v, msgs) {
+    foreach (QVariant v, msgs) {
         Message msg = v.value<Message>();
         msg.setFlags(msg.flags() | Message::Backlog);
         msglist << msg;
@@ -85,7 +86,6 @@ void ClientBacklogManager::receiveBacklogAll(MsgId first, MsgId last, int limit,
 
     dispatchMessages(msglist);
 }
-
 
 void ClientBacklogManager::requestInitialBacklog()
 {
@@ -97,6 +97,9 @@ void ClientBacklogManager::requestInitialBacklog()
 
     BacklogSettings settings;
     switch (settings.requesterType()) {
+    case BacklogRequester::AsNeeded:
+        _requester = new AsNeededBacklogRequester(this);
+        break;
     case BacklogRequester::GlobalUnread:
         _requester = new GlobalUnreadBacklogRequester(this);
         break;
@@ -115,12 +118,11 @@ void ClientBacklogManager::requestInitialBacklog()
     }
 }
 
-
-BufferIdList ClientBacklogManager::filterNewBufferIds(const BufferIdList &bufferIds)
+BufferIdList ClientBacklogManager::filterNewBufferIds(const BufferIdList& bufferIds)
 {
     BufferIdList newBuffers;
-    QSet<BufferId> availableBuffers = Client::networkModel()->allBufferIds().toSet();
-    foreach(BufferId bufferId, bufferIds) {
+    QSet<BufferId> availableBuffers = toQSet(Client::networkModel()->allBufferIds());
+    foreach (BufferId bufferId, bufferIds) {
         if (_buffersRequested.contains(bufferId) || !availableBuffers.contains(bufferId))
             continue;
         newBuffers << bufferId;
@@ -128,8 +130,7 @@ BufferIdList ClientBacklogManager::filterNewBufferIds(const BufferIdList &buffer
     return newBuffers;
 }
 
-
-void ClientBacklogManager::checkForBacklog(const QList<BufferId> &bufferIds)
+void ClientBacklogManager::checkForBacklog(const QList<BufferId>& bufferIds)
 {
     // we ingore all backlogrequests until we had our initial request
     if (!_initBacklogRequested) {
@@ -146,8 +147,8 @@ void ClientBacklogManager::checkForBacklog(const QList<BufferId> &bufferIds)
         break;
     case BacklogRequester::PerBufferUnread:
     case BacklogRequester::PerBufferFixed:
-    default:
-    {
+    case BacklogRequester::AsNeeded:
+    default: {
         BufferIdList buffers = filterNewBufferIds(bufferIds);
         if (!buffers.isEmpty())
             _requester->requestBacklog(buffers);
@@ -155,14 +156,12 @@ void ClientBacklogManager::checkForBacklog(const QList<BufferId> &bufferIds)
     };
 }
 
-
 bool ClientBacklogManager::isBuffering()
 {
     return _requester && _requester->isBuffering();
 }
 
-
-void ClientBacklogManager::dispatchMessages(const MessageList &messages, bool sort)
+void ClientBacklogManager::dispatchMessages(const MessageList& messages, bool sort)
 {
     if (messages.isEmpty())
         return;
@@ -171,18 +170,17 @@ void ClientBacklogManager::dispatchMessages(const MessageList &messages, bool so
 
     clock_t start_t = clock();
     if (sort)
-        qSort(msgs);
+        std::sort(msgs.begin(), msgs.end());
     Client::messageProcessor()->process(msgs);
     clock_t end_t = clock();
 
     emit messagesProcessed(tr("Processed %1 messages in %2 seconds.").arg(messages.count()).arg((float)(end_t - start_t) / CLOCKS_PER_SEC));
 }
 
-
 void ClientBacklogManager::reset()
 {
     delete _requester;
-    _requester = 0;
+    _requester = nullptr;
     _initBacklogRequested = false;
     _buffersRequested.clear();
 }

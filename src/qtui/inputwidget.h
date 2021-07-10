@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -27,8 +27,8 @@
 
 #include "abstractitemview.h"
 #include "action.h"
-#include "buffermodel.h"
 #include "bufferinfo.h"
+#include "buffermodel.h"
 #include "identity.h"
 #include "network.h"
 
@@ -41,12 +41,11 @@ class InputWidget : public AbstractItemView
     Q_OBJECT
 
 public:
-    InputWidget(QWidget *parent = 0);
-    virtual ~InputWidget();
+    InputWidget(QWidget* parent = nullptr);
 
-    const Network *currentNetwork() const;
+    const Network* currentNetwork() const;
 
-    inline MultiLineEdit *inputLine() const { return ui.inputEdit; }
+    inline MultiLineEdit* inputLine() const { return ui.inputEdit; }
 
 public slots:
     /**
@@ -85,6 +84,13 @@ public slots:
     void toggleFormatUnderline();
 
     /**
+     * Toggle the striking of the selected or typed text
+     *
+     * striking becomes normal, and normal becomes underlined.
+     */
+    void toggleFormatStrikethrough();
+
+    /**
      * Clear the formatting of the selected or typed text
      *
      * Clears the font weight (bold, italic, underline) and foreground/background coloring.
@@ -92,26 +98,26 @@ public slots:
     void clearFormat();
 
 protected:
-    virtual bool eventFilter(QObject *watched, QEvent *event);
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 protected slots:
-    virtual void currentChanged(const QModelIndex &current, const QModelIndex &previous);
-    virtual void rowsAboutToBeRemoved(const QModelIndex &parent, int start, int end);
-    virtual void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight);
+    void currentChanged(const QModelIndex& current, const QModelIndex& previous) override;
+    void rowsAboutToBeRemoved(const QModelIndex& parent, int start, int end) override;
+    void dataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight) override;
 
 private slots:
-    void setCustomFont(const QVariant &font);
-    void setUseCustomFont(const QVariant &);
-    void setEnableEmacsMode(const QVariant &);
-    void setShowNickSelector(const QVariant &);
-    void setShowStyleButtons(const QVariant &);
-    void setEnablePerChatHistory(const QVariant &);
-    void setMaxLines(const QVariant &);
-    void setLineWrapEnabled(const QVariant &);
-    void setMultiLineEnabled(const QVariant &);
-    void setScrollBarsEnabled(const QVariant &);
-    void onTextEntered(const QString &text);
-    void changeNick(const QString &newNick) const;
+    void setCustomFont(const QVariant& font);
+    void setUseCustomFont(const QVariant&);
+    void setEnableEmacsMode(const QVariant&);
+    void setShowNickSelector(const QVariant&);
+    void setShowStyleButtons(const QVariant&);
+    void setEnablePerChatHistory(const QVariant&);
+    void setMaxLines(const QVariant&);
+    void setLineWrapEnabled(const QVariant&);
+    void setMultiLineEnabled(const QVariant&);
+    void setScrollBarsEnabled(const QVariant&);
+    void onTextEntered(const QString& text);
+    void changeNick(const QString& newNick) const;
 
     void setNetwork(NetworkId networkId);
     void setIdentity(IdentityId identityId);
@@ -128,13 +134,14 @@ private slots:
      */
     void setStyleOptionsExpanded(const bool visible);
 
-    void currentCharFormatChanged(const QTextCharFormat &format);
+    void currentCharFormatChanged(const QTextCharFormat& format);
     void on_showStyleButton_toggled(bool checked);
     void on_boldButton_clicked(bool checked);
     void on_italicButton_clicked(bool checked);
     void on_underlineButton_clicked(bool checked);
-    void colorChosen(QAction *action);
-    void colorHighlightChosen(QAction *action);
+    void on_strikethroughButton_clicked(bool checked);
+    void colorChosen(QAction* action);
+    void colorHighlightChosen(QAction* action);
 
 private:
     /**
@@ -167,36 +174,42 @@ private:
      */
     void setFormatUnderline(const bool underline);
 
+    /**
+     * Sets the strikethrough of the selected or typed text
+     *
+     * @param strike If true, set text striked, otherwise set text normal
+     */
+    void setFormatStrikethrough(const bool strike);
+
     Ui::InputWidget ui;
 
     NetworkId _networkId;
     IdentityId _identityId;
     QMenu *_colorMenu, *_colorFillMenu;
 
-    void mergeFormatOnSelection(const QTextCharFormat &format);
-    void fontChanged(const QFont &f);
-    QIcon createColorToolButtonIcon(const QIcon &icon, const QColor &color);
+    void mergeFormatOnSelection(const QTextCharFormat& format);
+    void fontChanged(const QFont& f);
+    QIcon createColorToolButtonIcon(const QIcon& icon, const QColor& color);
     QTextCharFormat getFormatOfWordOrSelection();
-    void setFormatOnSelection(const QTextCharFormat &format);
+    void setFormatOnSelection(const QTextCharFormat& format);
 
     bool _perChatHistory;
-    struct HistoryState {
+    struct HistoryState
+    {
         QStringList history;
         QHash<int, QString> tempHistory;
-        qint32 idx;
+        qint32 idx{0};
         QString inputLine;
-        inline HistoryState() : idx(0) {};
     };
 
     QMap<BufferId, HistoryState> historyMap;
 };
-
 
 class MouseWheelFilter : public QObject
 {
     Q_OBJECT
 
 public:
-    MouseWheelFilter(QObject *parent = 0);
-    virtual bool eventFilter(QObject *obj, QEvent *event);
+    MouseWheelFilter(QObject* parent = nullptr);
+    bool eventFilter(QObject* obj, QEvent* event) override;
 };

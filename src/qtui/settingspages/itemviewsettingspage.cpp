@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,16 +18,16 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include "itemviewsettingspage.h"
+
 #include <QSignalMapper>
 
-#include "itemviewsettingspage.h"
 #include "colorbutton.h"
 #include "qtui.h"
 #include "qtuistyle.h"
 
-ItemViewSettingsPage::ItemViewSettingsPage(QWidget *parent)
-    : SettingsPage(tr("Interface"), tr("Chat & Nick Lists"), parent),
-    _mapper(new QSignalMapper(this))
+ItemViewSettingsPage::ItemViewSettingsPage(QWidget* parent)
+    : SettingsPage(tr("Interface"), tr("Chat & Nick Lists"), parent)
 {
     ui.setupUi(this);
 
@@ -42,15 +42,14 @@ ItemViewSettingsPage::ItemViewSettingsPage(QWidget *parent)
 
     ui.bufferViewPreview->expandAll();
 
-    foreach(ColorButton *button, findChildren<ColorButton *>()) {
-        connect(button, SIGNAL(colorChanged(QColor)), _mapper, SLOT(map()));
-        _mapper->setMapping(button, button);
+    for (ColorButton* button : findChildren<ColorButton*>()) {
+        connect(button, &ColorButton::colorChanged, button, [this, button]() {
+            updateBufferViewPreview(button);
+        });
     }
-    connect(_mapper, SIGNAL(mapped(QWidget *)), SLOT(updateBufferViewPreview(QWidget *)));
 
     initAutoWidgets();
 }
-
 
 void ItemViewSettingsPage::save()
 {
@@ -59,10 +58,9 @@ void ItemViewSettingsPage::save()
     QtUi::style()->reload();
 }
 
-
-void ItemViewSettingsPage::updateBufferViewPreview(QWidget *widget)
+void ItemViewSettingsPage::updateBufferViewPreview(QWidget* widget)
 {
-    ColorButton *button = qobject_cast<ColorButton *>(widget);
+    auto* button = qobject_cast<ColorButton*>(widget);
     if (!button)
         return;
 

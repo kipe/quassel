@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -32,18 +32,18 @@ class MarkerLineItem : public QGraphicsObject
     Q_OBJECT
 
 public:
-    MarkerLineItem(qreal sceneWidth, QGraphicsItem *parent = 0);
-    virtual inline int type() const { return ChatScene::MarkerLineType; }
+    MarkerLineItem(qreal sceneWidth, QGraphicsItem* parent = nullptr);
+    inline int type() const override { return ChatScene::MarkerLineType; }
 
-    inline QRectF boundingRect() const { return _boundingRect; }
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
+    inline QRectF boundingRect() const override { return _boundingRect; }
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget = nullptr) override;
 
-    inline ChatLine *chatLine() const { return _chatLine; }
+    inline ChatLine* chatLine() const { return _chatLine; }
 
 public slots:
     //! Set the ChatLine this MarkerLineItem is associated to
-    void setChatLine(ChatLine *line);
-    void sceneRectChanged(const QRectF &);
+    void setChatLine(ChatLine* line);
+    void sceneRectChanged(const QRectF&);
 
 private slots:
     void styleChanged();
@@ -51,8 +51,7 @@ private slots:
 private:
     QRectF _boundingRect;
     QBrush _brush;
-    ChatLine *_chatLine;
+    ChatLine* _chatLine;
 };
-
 
 #endif

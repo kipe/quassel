@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -32,13 +32,13 @@ class DebugLogDlg : public QDialog
     Q_OBJECT
 
 public:
-    DebugLogDlg(QWidget *parent = 0);
+    DebugLogDlg(QWidget* parent = nullptr);
 
 private slots:
-    void logUpdated(const Logger::LogEntry &msg);
+    void logUpdated(const Logger::LogEntry& msg);
 
 private:
-    QString toString(const Logger::LogEntry &msg);
+    QString toString(const Logger::LogEntry& msg);
 
 private:
     Ui::DebugLogDlg ui;

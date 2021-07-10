@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,25 +18,14 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include "aliasmanager.h"
+
 #include <QDebug>
 #include <QStringList>
 
-#include "aliasmanager.h"
 #include "network.h"
 
-INIT_SYNCABLE_OBJECT(AliasManager)
-AliasManager &AliasManager::operator=(const AliasManager &other)
-{
-    if (this == &other)
-        return *this;
-
-    SyncableObject::operator=(other);
-    _aliases = other._aliases;
-    return *this;
-}
-
-
-int AliasManager::indexOf(const QString &name) const
+int AliasManager::indexOf(const QString& name) const
 {
     for (int i = 0; i < _aliases.count(); i++) {
         if (_aliases[i].name == name)
@@ -44,7 +33,6 @@ int AliasManager::indexOf(const QString &name) const
     }
     return -1;
 }
-
 
 QVariantMap AliasManager::initAliases() const
 {
@@ -62,14 +50,14 @@ QVariantMap AliasManager::initAliases() const
     return aliases;
 }
 
-
-void AliasManager::initSetAliases(const QVariantMap &aliases)
+void AliasManager::initSetAliases(const QVariantMap& aliases)
 {
     QStringList names = aliases["names"].toStringList();
     QStringList expansions = aliases["expansions"].toStringList();
 
     if (names.count() != expansions.count()) {
-        qWarning() << "AliasesManager::initSetAliases: received" << names.count() << "alias names but only" << expansions.count() << "expansions!";
+        qWarning() << "AliasesManager::initSetAliases: received" << names.count() << "alias names but only" << expansions.count()
+                   << "expansions!";
         return;
     }
 
@@ -79,8 +67,7 @@ void AliasManager::initSetAliases(const QVariantMap &aliases)
     }
 }
 
-
-void AliasManager::addAlias(const QString &name, const QString &expansion)
+void AliasManager::addAlias(const QString& name, const QString& expansion)
 {
     if (contains(name)) {
         return;
@@ -91,39 +78,30 @@ void AliasManager::addAlias(const QString &name, const QString &expansion)
     SYNC(ARG(name), ARG(expansion))
 }
 
-
 AliasManager::AliasList AliasManager::defaults()
 {
     AliasList aliases;
-    aliases << Alias("j", "/join $0")
-            << Alias("ns", "/msg nickserv $0")
-            << Alias("nickserv", "/msg nickserv $0")
-            << Alias("cs", "/msg chanserv $0")
-            << Alias("chanserv",  "/msg chanserv $0")
-            << Alias("hs", "/msg hostserv $0")
-            << Alias("hostserv", "/msg hostserv $0")
-            << Alias("wii", "/whois $0 $0")
-            << Alias("back", "/quote away");
+    aliases << Alias("j", "/join $0") << Alias("ns", "/quote nickserv $0") << Alias("nickserv", "/quote nickserv $0")
+            << Alias("cs", "/quote chanserv $0") << Alias("chanserv", "/quote chanserv $0") << Alias("hs", "/quote hostserv $0")
+            << Alias("hostserv", "/quote hostserv $0") << Alias("wii", "/whois $0 $0") << Alias("back", "/quote away")
+            << Alias("raw", "/quote $0");
 
 #ifdef Q_OS_LINUX
     // let's add aliases for scripts that only run on linux
-    aliases << Alias("inxi", "/exec inxi $0")
-            << Alias("sysinfo", "/exec inxi -d");
+    aliases << Alias("inxi", "/exec inxi $0") << Alias("sysinfo", "/exec inxi -d");
 #endif
 
     return aliases;
 }
 
-
-AliasManager::CommandList AliasManager::processInput(const BufferInfo &info, const QString &msg)
+AliasManager::CommandList AliasManager::processInput(const BufferInfo& info, const QString& msg)
 {
     CommandList result;
     processInput(info, msg, result);
     return result;
 }
 
-
-void AliasManager::processInput(const BufferInfo &info, const QString &msg_, CommandList &list)
+void AliasManager::processInput(const BufferInfo& info, const QString& msg_, CommandList& list)
 {
     QString msg = msg_;
 
@@ -136,7 +114,7 @@ void AliasManager::processInput(const BufferInfo &info, const QString &msg_, Com
             msg.remove(0, 1);  // "//asdf" is transformed to "/asdf"
         else if (msg.startsWith("/ "))
             msg.remove(0, 2);  // "/ /asdf" is transformed to "/asdf"
-        msg.prepend("/SAY "); // make sure we only send proper commands to the core
+        msg.prepend("/SAY ");  // make sure we only send proper commands to the core
     }
     else {
         // check for aliases
@@ -152,16 +130,15 @@ void AliasManager::processInput(const BufferInfo &info, const QString &msg_, Com
     list.append(qMakePair(info, msg));
 }
 
-
-void AliasManager::expand(const QString &alias, const BufferInfo &bufferInfo, const QString &msg, CommandList &list)
+void AliasManager::expand(const QString& alias, const BufferInfo& bufferInfo, const QString& msg, CommandList& list)
 {
-    const Network *net = network(bufferInfo.networkId());
+    const Network* net = network(bufferInfo.networkId());
     if (!net) {
         // FIXME send error as soon as we have a method for that!
         return;
     }
 
-    QRegExp paramRangeR("\\$(\\d+)\\.\\.(\\d*)");
+    QRegExp paramRangeR(R"(\$(\d+)\.\.(\d*))");
     QStringList commands = alias.split(QRegExp("; ?"));
     QStringList params = msg.split(' ');
     QStringList expandedCommands;
@@ -188,19 +165,16 @@ void AliasManager::expand(const QString &alias, const BufferInfo &bufferInfo, co
 
         for (int j = params.count(); j > 0; j--) {
             // Find the referenced IRC user...
-            IrcUser *ircUser = net->ircUser(params[j - 1]);
+            IrcUser* ircUser = net->ircUser(params[j - 1]);
             // ...and replace components, using short-circuit evaluation as ircUser might be null
 
             // Account, or "*" if blank/nonexistent/logged out
-            command = command.replace(
-                        QString("$%1:account").arg(j),
-                        (ircUser && !ircUser->account().isEmpty()) ? ircUser->account()
-                                                                   : QString("*"));
+            command = command.replace(QString("$%1:account").arg(j),
+                                      (ircUser && !ircUser->account().isEmpty()) ? ircUser->account() : QString("*"));
 
             // Hostname, or "*" if blank/nonexistent
-            command = command.replace(
-                        QString("$%1:hostname").arg(j),
-                        (ircUser && !ircUser->host().isEmpty()) ? ircUser->host() : QString("*"));
+            command = command.replace(QString("$%1:hostname").arg(j),
+                                      (ircUser && !ircUser->host().isEmpty()) ? ircUser->host() : QString("*"));
 
             // Identd
             // Ident if verified, or "*" if blank/unknown/unverified (prefixed with "~")
@@ -211,25 +185,21 @@ void AliasManager::expand(const QString &alias, const BufferInfo &bufferInfo, co
             // server does not verify idents, it usually won't add "~".
             //
             // Identd must be replaced before ident to avoid being treated as "$i:ident" + "d"
-            command = command.replace(
-                        QString("$%1:identd").arg(j),
-                        (ircUser && !ircUser->user().isEmpty()
-                         && !ircUser->user().startsWith("~"))
-                        ? ircUser->user() : QString("*"));
+            command = command.replace(QString("$%1:identd").arg(j),
+                                      (ircUser && !ircUser->user().isEmpty() && !ircUser->user().startsWith("~")) ? ircUser->user()
+                                                                                                                  : QString("*"));
 
             // Ident, or "*" if blank/nonexistent
-            command = command.replace(
-                        QString("$%1:ident").arg(j),
-                        (ircUser && !ircUser->user().isEmpty()) ? ircUser->user() : QString("*"));
+            command = command.replace(QString("$%1:ident").arg(j), (ircUser && !ircUser->user().isEmpty()) ? ircUser->user() : QString("*"));
 
             // Nickname
             // Must be replaced last to avoid interferring with more specific aliases
             command = command.replace(QString("$%1").arg(j), params[j - 1]);
         }
         command = command.replace("$0", msg);
-        command = command.replace("$channelname", bufferInfo.bufferName()); // legacy
+        command = command.replace("$channelname", bufferInfo.bufferName());  // legacy
         command = command.replace("$channel", bufferInfo.bufferName());
-        command = command.replace("$currentnick", net->myNick()); // legacy
+        command = command.replace("$currentnick", net->myNick());  // legacy
         command = command.replace("$nick", net->myNick());
         expandedCommands << command;
     }

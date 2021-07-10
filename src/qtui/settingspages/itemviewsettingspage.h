@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,6 +22,7 @@
 #define ITEMVIEWSETTINGSPAGE_H_
 
 #include "settingspage.h"
+
 #include "ui_itemviewsettingspage.h"
 
 class ColorButton;
@@ -33,24 +34,21 @@ class ItemViewSettingsPage : public SettingsPage
     Q_OBJECT
 
 public:
-    ItemViewSettingsPage(QWidget *parent = 0);
+    ItemViewSettingsPage(QWidget* parent = nullptr);
 
-    inline bool hasDefaults() const { return true; }
+    inline bool hasDefaults() const override { return true; }
 
 public slots:
-    void save();
+    void save() override;
 
 private slots:
-    void updateBufferViewPreview(QWidget *button);
+    void updateBufferViewPreview(QWidget* button);
 
 private:
     Ui::ItemViewSettingsPage ui;
-    QSignalMapper *_mapper;
-    QTreeWidgetItem *_networkItem, *_defaultBufferItem, *_inactiveBufferItem,
-    *_activeBufferItem, *_unreadBufferItem, *_highlightedBufferItem;
+    QTreeWidgetItem *_networkItem, *_defaultBufferItem, *_inactiveBufferItem, *_activeBufferItem, *_unreadBufferItem, *_highlightedBufferItem;
 
-    inline QString settingsKey() const { return QString("ItemViews"); }
+    inline QString settingsKey() const override { return QString("ItemViews"); }
 };
-
 
 #endif

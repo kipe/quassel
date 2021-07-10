@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,11 +22,9 @@
 
 #include "messagemodel.h"
 
-DebugMessageModelFilter::DebugMessageModelFilter(QObject *parent)
+DebugMessageModelFilter::DebugMessageModelFilter(QObject* parent)
     : QSortFilterProxyModel(parent)
-{
-}
-
+{}
 
 QVariant DebugMessageModelFilter::headerData(int section, Qt::Orientation orientation, int role) const
 {
@@ -45,8 +43,7 @@ QVariant DebugMessageModelFilter::headerData(int section, Qt::Orientation orient
     }
 }
 
-
-QVariant DebugMessageModelFilter::data(const QModelIndex &index, int role) const
+QVariant DebugMessageModelFilter::data(const QModelIndex& index, int role) const
 {
     if (index.column() != 0 || role != Qt::DisplayRole)
         return QSortFilterProxyModel::data(index, role);

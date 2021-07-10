@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,6 +18,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
+#include "multilineedit.h"
+
 #include <QApplication>
 #include <QMessageBox>
 #include <QScrollBar>
@@ -25,23 +27,12 @@
 #include "actioncollection.h"
 #include "bufferview.h"
 #include "graphicalui.h"
-#include "multilineedit.h"
 #include "tabcompleter.h"
 
 const int leftMargin = 3;
 
-MultiLineEdit::MultiLineEdit(QWidget *parent)
-    : MultiLineEditParent(parent),
-    _idx(0),
-    _mode(SingleLine),
-    _singleLine(true),
-    _minHeight(1),
-    _maxHeight(5),
-    _scrollBarsEnabled(true),
-    _pasteProtectionEnabled(true),
-    _emacsMode(false),
-    _completionSpace(0),
-    _lastDocumentHeight(-1)
+MultiLineEdit::MultiLineEdit(QWidget* parent)
+    : MultiLineEditParent(parent)
 {
     document()->setDocumentMargin(0);
 
@@ -62,7 +53,7 @@ MultiLineEdit::MultiLineEdit(QWidget *parent)
     // Prevent QTextHtmlImporter::appendNodeText from eating whitespace
     document()->setDefaultStyleSheet("span { white-space: pre-wrap; }");
 
-    connect(this, SIGNAL(textChanged()), this, SLOT(on_textChanged()));
+    connect(this, &QTextEdit::textChanged, this, &MultiLineEdit::on_textChanged);
 
     _mircColorMap["00"] = "#ffffff";
     _mircColorMap["01"] = "#000000";
@@ -82,18 +73,11 @@ MultiLineEdit::MultiLineEdit(QWidget *parent)
     _mircColorMap["15"] = "#c0c0c0";
 }
 
-
-MultiLineEdit::~MultiLineEdit()
-{
-}
-
-
 #if defined HAVE_SONNET && !defined HAVE_KDE
-Sonnet::Highlighter *MultiLineEdit::highlighter() const
+Sonnet::Highlighter* MultiLineEdit::highlighter() const
 {
     return _spellCheckDecorator->highlighter();
 }
-
 
 void MultiLineEdit::setSpellCheckEnabled(bool enabled)
 {
@@ -103,15 +87,15 @@ void MultiLineEdit::setSpellCheckEnabled(bool enabled)
     }
 }
 
-void MultiLineEdit::contextMenuEvent(QContextMenuEvent *event)
+void MultiLineEdit::contextMenuEvent(QContextMenuEvent* event)
 {
-    QMenu *menu = createStandardContextMenu();
+    QMenu* menu = createStandardContextMenu();
     menu->addSeparator();
 
     auto action = menu->addAction(tr("Auto Spell Check"));
     action->setCheckable(true);
     action->setChecked(highlighter()->isActive());
-    connect(action, SIGNAL(toggled(bool)), this, SLOT(setSpellCheckEnabled(bool)));
+    connect(action, &QAction::toggled, this, &MultiLineEdit::setSpellCheckEnabled);
 
     menu->exec(event->globalPos());
     delete menu;
@@ -119,13 +103,11 @@ void MultiLineEdit::contextMenuEvent(QContextMenuEvent *event)
 
 #endif
 
-
-void MultiLineEdit::setCustomFont(const QFont &font)
+void MultiLineEdit::setCustomFont(const QFont& font)
 {
     setFont(font);
     updateSizeHint();
 }
-
 
 void MultiLineEdit::setMode(Mode mode)
 {
@@ -135,13 +117,11 @@ void MultiLineEdit::setMode(Mode mode)
     _mode = mode;
 }
 
-
 void MultiLineEdit::setLineWrapEnabled(bool enable)
 {
     setLineWrapMode(enable ? WidgetWidth : NoWrap);
     updateSizeHint();
 }
-
 
 void MultiLineEdit::setMinHeight(int lines)
 {
@@ -152,7 +132,6 @@ void MultiLineEdit::setMinHeight(int lines)
     updateSizeHint();
 }
 
-
 void MultiLineEdit::setMaxHeight(int lines)
 {
     if (lines == _maxHeight)
@@ -162,7 +141,6 @@ void MultiLineEdit::setMaxHeight(int lines)
     updateSizeHint();
 }
 
-
 void MultiLineEdit::setScrollBarsEnabled(bool enable)
 {
     if (_scrollBarsEnabled == enable)
@@ -171,7 +149,6 @@ void MultiLineEdit::setScrollBarsEnabled(bool enable)
     _scrollBarsEnabled = enable;
     updateScrollBars();
 }
-
 
 void MultiLineEdit::updateScrollBars()
 {
@@ -188,14 +165,12 @@ void MultiLineEdit::updateScrollBars()
         setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 }
 
-
-void MultiLineEdit::resizeEvent(QResizeEvent *event)
+void MultiLineEdit::resizeEvent(QResizeEvent* event)
 {
     QTextEdit::resizeEvent(event);
     updateSizeHint();
     updateScrollBars();
 }
-
 
 void MultiLineEdit::updateSizeHint()
 {
@@ -206,17 +181,14 @@ void MultiLineEdit::updateSizeHint()
 
     // use the style to determine a decent size
     int h = qMin(qMax((int)document()->size().height() + scrollBarHeight, minPixelHeight), maxPixelHeight) + 2 * frameWidth();
-#if QT_VERSION < 0x050000
-    QStyleOptionFrameV2 opt;
-#else
+
     QStyleOptionFrame opt;
-#endif
     opt.initFrom(this);
     opt.rect = QRect(0, 0, 100, h);
     opt.lineWidth = lineWidth();
     opt.midLineWidth = midLineWidth();
     opt.state |= QStyle::State_Sunken;
-    QWidget *widget = this;
+    QWidget* widget = this;
 #ifdef Q_OS_MAC
     widget = 0;
 #endif
@@ -227,34 +199,29 @@ void MultiLineEdit::updateSizeHint()
     }
 }
 
-
 QSize MultiLineEdit::sizeHint() const
 {
     if (!_sizeHint.isValid()) {
-        MultiLineEdit *that = const_cast<MultiLineEdit *>(this);
+        auto* that = const_cast<MultiLineEdit*>(this);
         that->updateSizeHint();
     }
     return _sizeHint;
 }
-
 
 QSize MultiLineEdit::minimumSizeHint() const
 {
     return sizeHint();
 }
 
-
 void MultiLineEdit::setEmacsMode(bool enable)
 {
     _emacsMode = enable;
 }
 
-
-void MultiLineEdit::setPasteProtectionEnabled(bool enable, QWidget *)
+void MultiLineEdit::setPasteProtectionEnabled(bool enable, QWidget*)
 {
     _pasteProtectionEnabled = enable;
 }
-
 
 void MultiLineEdit::historyMoveBack()
 {
@@ -266,17 +233,16 @@ void MultiLineEdit::historyMoveBack()
     }
 }
 
-
 void MultiLineEdit::historyMoveForward()
 {
     addToHistory(convertRichtextToMircCodes(), true);
 
     if (_idx < _history.count()) {
         _idx++;
-        if (_idx < _history.count() || _tempHistory.contains(_idx)) // tempHistory might have an entry for idx == history.count() + 1
+        if (_idx < _history.count() || _tempHistory.contains(_idx))  // tempHistory might have an entry for idx == history.count() + 1
             showHistoryEntry();
         else
-            reset();        // equals clear() in this case
+            reset();  // equals clear() in this case
     }
     else {
         addToHistory(convertRichtextToMircCodes());
@@ -284,8 +250,7 @@ void MultiLineEdit::historyMoveForward()
     }
 }
 
-
-bool MultiLineEdit::addToHistory(const QString &text, bool temporary)
+bool MultiLineEdit::addToHistory(const QString& text, bool temporary)
 {
     if (text.isEmpty())
         return false;
@@ -311,14 +276,13 @@ bool MultiLineEdit::addToHistory(const QString &text, bool temporary)
     return false;
 }
 
-
-bool MultiLineEdit::event(QEvent *e)
+bool MultiLineEdit::event(QEvent* e)
 {
     // We need to make sure that global shortcuts aren't eaten
     if (e->type() == QEvent::ShortcutOverride) {
-        QKeyEvent *event = static_cast<QKeyEvent *>(e);
+        auto* event = static_cast<QKeyEvent*>(e);
         QKeySequence key = QKeySequence(event->key() | event->modifiers());
-        foreach(QAction *action, GraphicalUi::actionCollection()->actions()) {
+        foreach (QAction* action, GraphicalUi::actionCollection()->actions()) {
             if (action->shortcuts().contains(key)) {
                 e->ignore();
                 return false;
@@ -329,8 +293,7 @@ bool MultiLineEdit::event(QEvent *e)
     return MultiLineEditParent::event(e);
 }
 
-
-void MultiLineEdit::keyPressEvent(QKeyEvent *event)
+void MultiLineEdit::keyPressEvent(QKeyEvent* event)
 {
     if (event == QKeySequence::InsertLineSeparator) {
         if (_mode == SingleLine) {
@@ -351,7 +314,7 @@ void MultiLineEdit::keyPressEvent(QKeyEvent *event)
             if (!(event->modifiers() & Qt::ControlModifier)) {
                 int pos = textCursor().position();
                 moveCursor(QTextCursor::Up);
-                if (pos == textCursor().position()) // already on top line -> history
+                if (pos == textCursor().position())  // already on top line -> history
                     historyMoveBack();
             }
             else
@@ -367,7 +330,7 @@ void MultiLineEdit::keyPressEvent(QKeyEvent *event)
             if (!(event->modifiers() & Qt::ControlModifier)) {
                 int pos = textCursor().position();
                 moveCursor(QTextCursor::Down);
-                if (pos == textCursor().position()) // already on bottom line -> history
+                if (pos == textCursor().position())  // already on bottom line -> history
                     historyMoveForward();
             }
             else
@@ -421,9 +384,7 @@ void MultiLineEdit::keyPressEvent(QKeyEvent *event)
                 break;
             }
         }
-        else if (event->modifiers() & Qt::MetaModifier ||
-                 event->modifiers() & Qt::AltModifier)
-        {
+        else if (event->modifiers() & Qt::MetaModifier || event->modifiers() & Qt::AltModifier) {
             switch (event->key()) {
             case Qt::Key_Right:
                 moveCursor(QTextCursor::WordRight);
@@ -450,26 +411,24 @@ void MultiLineEdit::keyPressEvent(QKeyEvent *event)
                 cut();
                 return;
 
-            case Qt::Key_U: // uppercase word
+            case Qt::Key_U:  // uppercase word
                 moveCursor(QTextCursor::WordRight, QTextCursor::KeepAnchor);
                 textCursor().insertText(textCursor().selectedText().toUpper());
                 return;
 
-            case Qt::Key_L: // lowercase word
+            case Qt::Key_L:  // lowercase word
                 moveCursor(QTextCursor::WordRight, QTextCursor::KeepAnchor);
                 textCursor().insertText(textCursor().selectedText().toLower());
                 return;
 
-            case Qt::Key_C:
-            {           // capitalize word
+            case Qt::Key_C: {  // capitalize word
                 moveCursor(QTextCursor::WordRight, QTextCursor::KeepAnchor);
                 QString const text = textCursor().selectedText();
                 textCursor().insertText(text.left(1).toUpper() + text.mid(1).toLower());
                 return;
             }
 
-            case Qt::Key_T:
-            {           // transpose words
+            case Qt::Key_T: {  // transpose words
                 moveCursor(QTextCursor::StartOfWord);
                 moveCursor(QTextCursor::EndOfWord, QTextCursor::KeepAnchor);
                 QString const word1 = textCursor().selectedText();
@@ -502,16 +461,15 @@ void MultiLineEdit::keyPressEvent(QKeyEvent *event)
 #endif
 }
 
-
 QString MultiLineEdit::convertRichtextToMircCodes()
 {
-    bool underline, bold, italic, color;
+    bool underline, bold, italic, color, strikethrough;
     QString mircText, mircFgColor, mircBgColor;
     QTextCursor cursor = textCursor();
     QTextCursor peekcursor = textCursor();
     cursor.movePosition(QTextCursor::Start);
 
-    underline = bold = italic = color = false;
+    underline = bold = italic = color = strikethrough = false;
 
     while (cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor)) {
         if (cursor.selectedText() == QString(QChar(QChar::LineSeparator))
@@ -532,6 +490,10 @@ QString MultiLineEdit::convertRichtextToMircCodes()
                 bold = false;
                 mircText.append('\x02');
             }
+            if (strikethrough) {
+                strikethrough = false;
+                mircText.append('\x1E');
+            }
             mircText.append('\n');
         }
         else {
@@ -547,6 +509,10 @@ QString MultiLineEdit::convertRichtextToMircCodes()
                 underline = true;
                 mircText.append('\x1f');
             }
+            if (!strikethrough && cursor.charFormat().fontStrikeOut()) {
+                strikethrough = true;
+                mircText.append('\x1E');
+            }
             if (!color && (cursor.charFormat().foreground().isOpaque() || cursor.charFormat().background().isOpaque())) {
                 color = true;
                 mircText.append('\x03');
@@ -554,7 +520,7 @@ QString MultiLineEdit::convertRichtextToMircCodes()
                 mircBgColor = _mircColorMap.key(cursor.charFormat().background().color().name());
 
                 if (mircFgColor.isEmpty()) {
-                    mircFgColor = "01"; //use black if the current foreground color can't be converted
+                    mircFgColor = "01";  // use black if the current foreground color can't be converted
                 }
 
                 mircText.append(mircFgColor);
@@ -584,6 +550,10 @@ QString MultiLineEdit::convertRichtextToMircCodes()
                     bold = false;
                     mircText.append('\x02');
                 }
+                if (strikethrough) {
+                    strikethrough = false;
+                    mircText.append('\x1E');
+                }
             }
         }
 
@@ -602,11 +572,13 @@ QString MultiLineEdit::convertRichtextToMircCodes()
     if (bold)
         mircText.append('\x02');
 
+    if (strikethrough)
+        mircText.append('\x1E');
+
     return mircText;
 }
 
-
-bool MultiLineEdit::mircCodesChanged(QTextCursor &cursor, QTextCursor &peekcursor)
+bool MultiLineEdit::mircCodesChanged(QTextCursor& cursor, QTextCursor& peekcursor)
 {
     bool changed = false;
     if (cursor.charFormat().font().bold() != peekcursor.charFormat().font().bold())
@@ -615,6 +587,8 @@ bool MultiLineEdit::mircCodesChanged(QTextCursor &cursor, QTextCursor &peekcurso
         changed = true;
     if (cursor.charFormat().fontUnderline() != peekcursor.charFormat().fontUnderline())
         changed = true;
+    if (cursor.charFormat().fontStrikeOut() != peekcursor.charFormat().fontStrikeOut())
+        changed = true;
     if (cursor.charFormat().foreground().color() != peekcursor.charFormat().foreground().color())
         changed = true;
     if (cursor.charFormat().background().color() != peekcursor.charFormat().background().color())
@@ -622,11 +596,10 @@ bool MultiLineEdit::mircCodesChanged(QTextCursor &cursor, QTextCursor &peekcurso
     return changed;
 }
 
-
-QString MultiLineEdit::convertMircCodesToHtml(const QString &text)
+QString MultiLineEdit::convertMircCodesToHtml(const QString& text)
 {
     QStringList words;
-    QRegExp mircCode = QRegExp("(|||)", Qt::CaseSensitive);
+    QRegExp mircCode = QRegExp("(\x02|\x1d|\x1f|\x03|\x1E)", Qt::CaseSensitive);
 
     int posLeft = 0;
     int posRight = 0;
@@ -636,7 +609,7 @@ QString MultiLineEdit::convertMircCodesToHtml(const QString &text)
 
         if (posRight < 0) {
             words << text.mid(posLeft);
-            break; // no more mirc color codes
+            break;  // no more mirc color codes
         }
 
         if (posLeft < posRight) {
@@ -645,6 +618,10 @@ QString MultiLineEdit::convertMircCodesToHtml(const QString &text)
         }
 
         posRight = text.indexOf(mircCode.cap(), posRight + 1);
+        if (posRight == -1) {
+            words << text.mid(posLeft);
+            break;  // unclosed color code; can't process
+        }
         words << text.mid(posLeft, posRight + 1 - posLeft);
         posLeft = posRight + 1;
     }
@@ -663,13 +640,17 @@ QString MultiLineEdit::convertMircCodesToHtml(const QString &text)
             style.append(" text-decoration: underline;");
             words[i].replace('\x1f', "");
         }
+        if (words[i].contains('\x1E')) {
+            style.append(" text-decoration: line-through;");
+            words[i].replace('\x1E', "");
+        }
         if (words[i].contains('\x03')) {
             int pos = words[i].indexOf('\x03');
             int len = 3;
             QString fg = words[i].mid(pos + 1, 2);
             QString bg;
-            if (words[i][pos+3] == ',')
-                bg = words[i].mid(pos+4, 2);
+            if (words[i][pos + 3] == ',')
+                bg = words[i].mid(pos + 4, 2);
 
             style.append(" color:");
             style.append(_mircColorMap[fg]);
@@ -698,12 +679,10 @@ QString MultiLineEdit::convertMircCodesToHtml(const QString &text)
     return words.join("").replace("\n", "<br />");
 }
 
-
 void MultiLineEdit::on_returnPressed()
 {
     on_returnPressed(convertRichtextToMircCodes());
 }
-
 
 void MultiLineEdit::on_returnPressed(QString text)
 {
@@ -712,7 +691,7 @@ void MultiLineEdit::on_returnPressed(QString text)
     }
 
     if (!text.isEmpty()) {
-        foreach(const QString &line, text.split('\n', QString::SkipEmptyParts)) {
+        foreach (const QString& line, text.split('\n', QString::SkipEmptyParts)) {
             if (line.isEmpty())
                 continue;
             addToHistory(line);
@@ -725,7 +704,6 @@ void MultiLineEdit::on_returnPressed(QString text)
         emit noTextEntered();
     }
 }
-
 
 void MultiLineEdit::on_textChanged()
 {
@@ -745,17 +723,13 @@ void MultiLineEdit::on_textChanged()
                 QString msg = tr("Do you really want to paste %n line(s)?", "", lines.count());
                 msg += "<p>";
                 for (int i = 0; i < 4; i++) {
-#if QT_VERSION < 0x050000
-                    msg += Qt::escape(lines[i].left(40));
-#else
                     msg += lines[i].left(40).toHtmlEscaped();
-#endif
                     if (lines[i].count() > 40)
                         msg += "...";
                     msg += "<br />";
                 }
                 msg += "...</p>";
-                QMessageBox question(QMessageBox::NoIcon, tr("Paste Protection"), msg, QMessageBox::Yes|QMessageBox::No);
+                QMessageBox question(QMessageBox::NoIcon, tr("Paste Protection"), msg, QMessageBox::Yes | QMessageBox::No);
                 question.setDefaultButton(QMessageBox::No);
 #ifdef Q_OS_MAC
                 question.setWindowFlags(question.windowFlags() | Qt::Sheet);
@@ -764,7 +738,7 @@ void MultiLineEdit::on_textChanged()
                     return;
             }
 
-            foreach(QString line, lines) {
+            foreach (QString line, lines) {
                 clear();
                 insert(line);
                 on_returnPressed();
@@ -782,12 +756,10 @@ void MultiLineEdit::on_textChanged()
     ensureCursorVisible();
 }
 
-
 void MultiLineEdit::on_documentHeightChanged(qreal)
 {
     updateScrollBars();
 }
-
 
 void MultiLineEdit::reset()
 {
@@ -795,11 +767,10 @@ void MultiLineEdit::reset()
     _idx = _history.count();
     clear();
     QTextBlockFormat format = textCursor().blockFormat();
-    format.setLeftMargin(leftMargin); // we want a little space between the frame and the contents
+    format.setLeftMargin(leftMargin);  // we want a little space between the frame and the contents
     textCursor().setBlockFormat(format);
     updateScrollBars();
 }
-
 
 void MultiLineEdit::showHistoryEntry()
 {
@@ -807,13 +778,12 @@ void MultiLineEdit::showHistoryEntry()
     setHtml(convertMircCodesToHtml(_tempHistory.contains(_idx) ? _tempHistory[_idx] : _history[_idx]));
     QTextCursor cursor = textCursor();
     QTextBlockFormat format = cursor.blockFormat();
-    format.setLeftMargin(leftMargin); // we want a little space between the frame and the contents
+    format.setLeftMargin(leftMargin);  // we want a little space between the frame and the contents
     cursor.setBlockFormat(format);
     cursor.movePosition(QTextCursor::End);
     setTextCursor(cursor);
     updateScrollBars();
 }
-
 
 void MultiLineEdit::addCompletionSpace()
 {
@@ -821,4 +791,3 @@ void MultiLineEdit::addCompletionSpace()
     _completionSpace = 2;
     insertPlainText(" ");
 }
-

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,39 +20,41 @@
 
 #include "messagemodel.h"
 
+#include <algorithm>
+
 #include <QEvent>
 
 #include "backlogsettings.h"
-#include "clientbacklogmanager.h"
 #include "client.h"
+#include "clientbacklogmanager.h"
 #include "message.h"
 #include "networkmodel.h"
 
 class ProcessBufferEvent : public QEvent
 {
 public:
-    inline ProcessBufferEvent() : QEvent(QEvent::User) {}
+    inline ProcessBufferEvent()
+        : QEvent(QEvent::User)
+    {}
 };
 
-
-MessageModel::MessageModel(QObject *parent)
+MessageModel::MessageModel(QObject* parent)
     : QAbstractItemModel(parent)
 {
     QDateTime now = QDateTime::currentDateTime();
     now.setTimeSpec(Qt::UTC);
     _nextDayChange.setTimeSpec(Qt::UTC);
-    _nextDayChange.setMSecsSinceEpoch(
-                ((now.toMSecsSinceEpoch() / DAY_IN_MSECS) + 1) * DAY_IN_MSECS);
+    _nextDayChange.setMSecsSinceEpoch(((now.toMSecsSinceEpoch() / DAY_IN_MSECS) + 1) * DAY_IN_MSECS);
     _nextDayChange.setTimeSpec(Qt::LocalTime);
     _dayChangeTimer.setInterval(QDateTime::currentDateTime().secsTo(_nextDayChange) * 1000);
     _dayChangeTimer.start();
-    connect(&_dayChangeTimer, SIGNAL(timeout()), this, SLOT(changeOfDay()));
+    connect(&_dayChangeTimer, &QTimer::timeout, this, &MessageModel::changeOfDay);
 }
 
-
-QVariant MessageModel::data(const QModelIndex &index, int role) const
+QVariant MessageModel::data(const QModelIndex& index, int role) const
 {
-    int row = index.row(); int column = index.column();
+    int row = index.row();
+    int column = index.column();
     if (row < 0 || row >= messageCount() || column < 0)
         return QVariant();
 
@@ -63,8 +65,7 @@ QVariant MessageModel::data(const QModelIndex &index, int role) const
     // return _messageList[row]->data(index.column(), role);
 }
 
-
-bool MessageModel::setData(const QModelIndex &index, const QVariant &value, int role)
+bool MessageModel::setData(const QModelIndex& index, const QVariant& value, int role)
 {
     int row = index.row();
     if (row < 0 || row >= messageCount())
@@ -77,12 +78,11 @@ bool MessageModel::setData(const QModelIndex &index, const QVariant &value, int 
     return false;
 }
 
-
-bool MessageModel::insertMessage(const Message &msg, bool fakeMsg)
+bool MessageModel::insertMessage(const Message& msg, bool fakeMsg)
 {
     MsgId id = msg.msgId();
     int idx = indexForId(id);
-    if (!fakeMsg && idx < messageCount()) { // check for duplicate
+    if (!fakeMsg && idx < messageCount()) {  // check for duplicate
         if (messageItemAt(idx)->msgId() == id)
             return false;
     }
@@ -91,8 +91,7 @@ bool MessageModel::insertMessage(const Message &msg, bool fakeMsg)
     return true;
 }
 
-
-void MessageModel::insertMessages(const QList<Message> &msglist)
+void MessageModel::insertMessages(const QList<Message>& msglist)
 {
     if (msglist.isEmpty())
         return;
@@ -108,22 +107,21 @@ void MessageModel::insertMessages(const QList<Message> &msglist)
             else {
                 _messageBuffer = msglist.mid(processedMsgs);
             }
-            qSort(_messageBuffer);
+            std::sort(_messageBuffer.begin(), _messageBuffer.end());
             QCoreApplication::postEvent(this, new ProcessBufferEvent());
         }
     }
     else {
         _messageBuffer << msglist;
-        qSort(_messageBuffer);
+        std::sort(_messageBuffer.begin(), _messageBuffer.end());
     }
 }
 
-
-void MessageModel::insertMessageGroup(const QList<Message> &msglist)
+void MessageModel::insertMessageGroup(const QList<Message>& msglist)
 {
-    Q_ASSERT(!msglist.isEmpty()); // the msglist can be assumed to be non empty
-//   int last = msglist.count() - 1;
-//   Q_ASSERT(0 == last || msglist.at(0).msgId() != msglist.at(last).msgId() || msglist.at(last).type() == Message::DayChange);
+    Q_ASSERT(!msglist.isEmpty());  // the msglist can be assumed to be non empty
+                                   //   int last = msglist.count() - 1;
+    //   Q_ASSERT(0 == last || msglist.at(0).msgId() != msglist.at(last).msgId() || msglist.at(last).type() == Message::DayChange);
     int start = indexForId(msglist.first().msgId());
     int end = start + msglist.count() - 1;
     Message dayChangeMsg;
@@ -132,8 +130,7 @@ void MessageModel::insertMessageGroup(const QList<Message> &msglist)
         // check if the preceeding msg is a daychange message and if so if
         // we have to drop or relocate it at the end of this chunk
         int prevIdx = start - 1;
-        if (messageItemAt(prevIdx)->msgType() == Message::DayChange
-            && messageItemAt(prevIdx)->timestamp() > msglist.at(0).timestamp()) {
+        if (messageItemAt(prevIdx)->msgType() == Message::DayChange && messageItemAt(prevIdx)->timestamp() > msglist.at(0).timestamp()) {
             beginRemoveRows(QModelIndex(), prevIdx, prevIdx);
             Message oldDayChangeMsg = takeMessageAt(prevIdx);
             if (msglist.last().timestamp() < oldDayChangeMsg.timestamp()) {
@@ -180,13 +177,13 @@ void MessageModel::insertMessageGroup(const QList<Message> &msglist)
         insertMessage__(start + msglist.count(), dayChangeMsg);
     endInsertRows();
 
-    Q_ASSERT(start == end || messageItemAt(start)->msgId() != messageItemAt(end)->msgId() || messageItemAt(end)->msgType() == Message::DayChange);
+    Q_ASSERT(start == end || messageItemAt(start)->msgId() != messageItemAt(end)->msgId()
+             || messageItemAt(end)->msgType() == Message::DayChange);
     Q_ASSERT(start == 0 || messageItemAt(start - 1)->msgId() < messageItemAt(start)->msgId());
     Q_ASSERT(end + 1 == messageCount() || messageItemAt(end)->msgId() < messageItemAt(end + 1)->msgId());
 }
 
-
-int MessageModel::insertMessagesGracefully(const QList<Message> &msglist)
+int MessageModel::insertMessagesGracefully(const QList<Message>& msglist)
 {
     /* short description:
      * 1) first we check where the message with the highest msgId from msglist would be inserted
@@ -201,13 +198,13 @@ int MessageModel::insertMessagesGracefully(const QList<Message> &msglist)
     QList<Message> grouplist;
     MsgId minId;
     MsgId dupeId;
-    int processedMsgs = 1; // we know the list isn't empty, so we at least process one message
+    int processedMsgs = 1;  // we know the list isn't empty, so we at least process one message
     int idx;
     bool fastForward = false;
     QList<Message>::const_iterator iter;
     if (inOrder) {
         iter = msglist.constEnd();
-        --iter; // this op is safe as we've allready passed an empty check
+        --iter;  // this op is safe as we've allready passed an empty check
     }
     else {
         iter = msglist.constBegin();
@@ -240,7 +237,7 @@ int MessageModel::insertMessagesGracefully(const QList<Message> &msglist)
                 break;
             processedMsgs++;
 
-            if (grouplist.isEmpty()) { // as long as we don't have a starting point, we have to update the dupeId
+            if (grouplist.isEmpty()) {  // as long as we don't have a starting point, we have to update the dupeId
                 idx = indexForId((*iter).msgId());
                 if (idx >= 0 && !messagesIsEmpty())
                     dupeId = messageItemAt(idx)->msgId();
@@ -272,7 +269,7 @@ int MessageModel::insertMessagesGracefully(const QList<Message> &msglist)
                 break;
             processedMsgs++;
 
-            if (grouplist.isEmpty()) { // as long as we don't have a starting point, we have to update the dupeId
+            if (grouplist.isEmpty()) {  // as long as we don't have a starting point, we have to update the dupeId
                 idx = indexForId((*iter).msgId());
                 if (idx >= 0 && !messagesIsEmpty())
                     dupeId = messageItemAt(idx)->msgId();
@@ -305,8 +302,7 @@ int MessageModel::insertMessagesGracefully(const QList<Message> &msglist)
     return processedMsgs;
 }
 
-
-void MessageModel::customEvent(QEvent *event)
+void MessageModel::customEvent(QEvent* event)
 {
     if (event->type() != QEvent::User)
         return;
@@ -326,7 +322,6 @@ void MessageModel::customEvent(QEvent *event)
         QCoreApplication::postEvent(this, new ProcessBufferEvent());
 }
 
-
 void MessageModel::clear()
 {
     _messagesWaiting.clear();
@@ -336,7 +331,6 @@ void MessageModel::clear()
         endRemoveRows();
     }
 }
-
 
 // returns index of msg with given Id or of the next message after that (i.e., the index where we'd insert this msg)
 int MessageModel::indexForId(MsgId id)
@@ -348,16 +342,18 @@ int MessageModel::indexForId(MsgId id)
         return messageCount();
 
     // binary search
-    int start = 0; int end = messageCount() - 1;
-    while (1) {
+    int start = 0;
+    int end = messageCount() - 1;
+    while (true) {
         if (end - start == 1)
             return end;
         int pivot = (end + start) / 2;
-        if (id <= messageItemAt(pivot)->msgId()) end = pivot;
-        else start = pivot;
+        if (id <= messageItemAt(pivot)->msgId())
+            end = pivot;
+        else
+            start = pivot;
     }
 }
-
 
 void MessageModel::changeOfDay()
 {
@@ -376,20 +372,18 @@ void MessageModel::changeOfDay()
     _nextDayChange = _nextDayChange.addMSecs(DAY_IN_MSECS);
 }
 
-
-void MessageModel::insertErrorMessage(BufferInfo bufferInfo, const QString &errorString)
+void MessageModel::insertErrorMessage(BufferInfo bufferInfo, const QString& errorString)
 {
     int idx = messageCount();
     beginInsertRows(QModelIndex(), idx, idx);
     Message msg(bufferInfo, Message::Error, errorString);
     if (!messagesIsEmpty())
-        msg.setMsgId(messageItemAt(idx-1)->msgId());
+        msg.setMsgId(messageItemAt(idx - 1)->msgId());
     else
         msg.setMsgId(0);
     insertMessage__(idx, msg);
     endInsertRows();
 }
-
 
 void MessageModel::requestBacklog(BufferId bufferId)
 {
@@ -399,19 +393,36 @@ void MessageModel::requestBacklog(BufferId bufferId)
     BacklogSettings backlogSettings;
     int requestCount = backlogSettings.dynamicBacklogAmount();
 
+    // Assume there's no available messages
+    MsgId oldestAvailableMsgId{-1};
+
+    // Try to find the oldest (lowest ID) message belonging to this buffer
     for (int i = 0; i < messageCount(); i++) {
         if (messageItemAt(i)->bufferId() == bufferId) {
-            _messagesWaiting[bufferId] = requestCount;
-            Client::backlogManager()->emitMessagesRequested(tr("Requesting %1 messages from backlog for buffer %2:%3")
-                .arg(requestCount)
-                .arg(Client::networkModel()->networkName(bufferId))
-                .arg(Client::networkModel()->bufferName(bufferId)));
-            Client::backlogManager()->requestBacklog(bufferId, -1, messageItemAt(i)->msgId(), requestCount);
-            return;
+            // Match found, use this message ID for requesting more backlog
+            oldestAvailableMsgId = messageItemAt(i)->msgId();
+            break;
         }
     }
-}
 
+    // Prepare to fetch messages
+    _messagesWaiting[bufferId] = requestCount;
+    Client::backlogManager()->emitMessagesRequested(tr("Requesting %1 messages from backlog for buffer %2:%3")
+                                                        .arg(requestCount)
+                                                        .arg(Client::networkModel()->networkName(bufferId))
+                                                        .arg(Client::networkModel()->bufferName(bufferId)));
+
+    if (oldestAvailableMsgId.isValid()) {
+        // Request messages from backlog starting from this message ID, going into the past
+        Client::backlogManager()->requestBacklog(bufferId, -1, oldestAvailableMsgId, requestCount);
+    }
+    else {
+        // No existing messages could be found.  Try to fetch the newest available messages instead.
+        // This may happen when initial backlog fetching is set to zero, or if no messages exist in
+        // a buffer.
+        Client::backlogManager()->requestBacklog(bufferId, -1, -1, requestCount);
+    }
+}
 
 void MessageModel::messagesReceived(BufferId bufferId, int count)
 {
@@ -425,7 +436,6 @@ void MessageModel::messagesReceived(BufferId bufferId, int count)
     }
 }
 
-
 void MessageModel::buffersPermanentlyMerged(BufferId bufferId1, BufferId bufferId2)
 {
     for (int i = 0; i < messageCount(); i++) {
@@ -437,7 +447,6 @@ void MessageModel::buffersPermanentlyMerged(BufferId bufferId1, BufferId bufferI
     }
 }
 
-
 // ========================================
 //  MessageModelItem
 // ========================================
@@ -448,11 +457,11 @@ QVariant MessageModelItem::data(int column, int role) const
 
     switch (role) {
     case MessageModel::MessageRole:
-        return QVariant::fromValue<Message>(message());
+        return QVariant::fromValue(message());
     case MessageModel::MsgIdRole:
-        return QVariant::fromValue<MsgId>(msgId());
+        return QVariant::fromValue(msgId());
     case MessageModel::BufferIdRole:
-        return QVariant::fromValue<BufferId>(bufferId());
+        return QVariant::fromValue(bufferId());
     case MessageModel::TypeRole:
         return msgType();
     case MessageModel::FlagsRole:
@@ -460,14 +469,13 @@ QVariant MessageModelItem::data(int column, int role) const
     case MessageModel::TimestampRole:
         return timestamp();
     case MessageModel::RedirectedToRole:
-        return qVariantFromValue<BufferId>(_redirectedTo);
+        return QVariant::fromValue(_redirectedTo);
     default:
-        return QVariant();
+        return {};
     }
 }
 
-
-bool MessageModelItem::setData(int column, const QVariant &value, int role)
+bool MessageModelItem::setData(int column, const QVariant& value, int role)
 {
     Q_UNUSED(column);
 
@@ -480,38 +488,32 @@ bool MessageModelItem::setData(int column, const QVariant &value, int role)
     }
 }
 
-
 // Stuff for later
-bool MessageModelItem::lessThan(const MessageModelItem *m1, const MessageModelItem *m2)
+bool MessageModelItem::lessThan(const MessageModelItem* m1, const MessageModelItem* m2)
 {
     return (*m1) < (*m2);
 }
 
-
-bool MessageModelItem::operator<(const MessageModelItem &other) const
+bool MessageModelItem::operator<(const MessageModelItem& other) const
 {
     return msgId() < other.msgId();
 }
 
-
-bool MessageModelItem::operator==(const MessageModelItem &other) const
+bool MessageModelItem::operator==(const MessageModelItem& other) const
 {
     return msgId() == other.msgId();
 }
 
-
-bool MessageModelItem::operator>(const MessageModelItem &other) const
+bool MessageModelItem::operator>(const MessageModelItem& other) const
 {
     return msgId() > other.msgId();
 }
 
-
-QDebug operator<<(QDebug dbg, const MessageModelItem &msgItem)
+QDebug operator<<(QDebug dbg, const MessageModelItem& msgItem)
 {
-    dbg.nospace() << qPrintable(QString("MessageModelItem(MsgId:")) << msgItem.msgId()
-    << qPrintable(QString(",")) << msgItem.timestamp()
-    << qPrintable(QString(", Type:")) << msgItem.msgType()
-    << qPrintable(QString(", Flags:")) << msgItem.msgFlags() << qPrintable(QString(")"))
-    << msgItem.data(1, Qt::DisplayRole).toString() << ":" << msgItem.data(2, Qt::DisplayRole).toString();
+    dbg.nospace() << qPrintable(QString("MessageModelItem(MsgId:")) << msgItem.msgId() << qPrintable(QString(",")) << msgItem.timestamp()
+                  << qPrintable(QString(", Type:")) << msgItem.msgType() << qPrintable(QString(", Flags:")) << msgItem.msgFlags()
+                  << qPrintable(QString(")")) << msgItem.data(1, Qt::DisplayRole).toString() << ":"
+                  << msgItem.data(2, Qt::DisplayRole).toString();
     return dbg;
 }

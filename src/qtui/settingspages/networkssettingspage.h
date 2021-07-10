@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -23,30 +23,31 @@
 
 #include <QIcon>
 
+#include "clientidentity.h"
 #include "network.h"
 #include "settingspage.h"
-#include "clientidentity.h"
 
-#include "ui_networkssettingspage.h"
+#include "ui_capseditdlg.h"
 #include "ui_networkadddlg.h"
 #include "ui_networkeditdlg.h"
-#include "ui_servereditdlg.h"
+#include "ui_networkssettingspage.h"
 #include "ui_saveidentitiesdlg.h"
+#include "ui_servereditdlg.h"
 
 class NetworksSettingsPage : public SettingsPage
 {
     Q_OBJECT
 
 public:
-    NetworksSettingsPage(QWidget *parent = 0);
+    NetworksSettingsPage(QWidget* parent = nullptr);
 
-    virtual inline bool needsCoreConnection() const { return true; }
+    inline bool needsCoreConnection() const override { return true; }
 
-    bool aboutToSave();
+    bool aboutToSave() override;
 
 public slots:
-    void save();
-    void load();
+    void save() override;
+    void load() override;
     void bufferList_Open(NetworkId);
 
 private slots:
@@ -54,10 +55,10 @@ private slots:
     void setWidgetStates();
     void coreConnectionStateChanged(bool);
     void networkConnectionStateChanged(Network::ConnectionState state);
-    void networkConnectionError(const QString &msg);
+    void networkConnectionError(const QString& msg);
 
     void displayNetwork(NetworkId);
-    void setItemState(NetworkId, QListWidgetItem *item = 0);
+    void setItemState(NetworkId, QListWidgetItem* item = nullptr);
 
     /**
      * Reset the capability-dependent settings to the default unknown states
@@ -92,9 +93,7 @@ private slots:
      */
     void clientNetworkCapsUpdated();
 
-#ifdef HAVE_SSL
     void sslUpdated();
-#endif
 
     void on_networkList_itemSelectionChanged();
     void on_addNetwork_clicked();
@@ -116,11 +115,22 @@ private slots:
      */
     void on_saslStatusDetails_clicked();
 
+    /**
+     * Event handler for Features status Details button
+     */
+    void on_enableCapsStatusDetails_clicked();
+
+    /**
+     * Event handler for Features Advanced edit button
+     */
+    void on_enableCapsAdvanced_clicked();
+
 private:
     /**
      * Status of capability support
      */
-    enum CapSupportStatus {
+    enum CapSupportStatus
+    {
         Unknown,           ///< Old core, or otherwise unknown, can't make assumptions
         Disconnected,      ///< Disconnected from network, can't determine
         MaybeUnsupported,  ///< Server does not advertise support at this moment
@@ -132,41 +142,47 @@ private:
 
     NetworkId currentId;
     QHash<NetworkId, NetworkInfo> networkInfos;
-    bool _ignoreWidgetChanges;
-#ifdef HAVE_SSL
-    CertIdentity *_cid;
-#endif
+    bool _ignoreWidgetChanges{false};
+    CertIdentity* _cid{nullptr};
 
     QIcon connectedIcon, connectingIcon, disconnectedIcon;
 
     // Status icons
-    QIcon infoIcon, warningIcon;
+    QIcon infoIcon, successIcon, unavailableIcon, questionIcon;
 
-    CapSupportStatus _saslStatusSelected;  /// Status of SASL support for currently-selected network
+    CapSupportStatus _capSaslStatusSelected;  ///< Status of SASL support for selected network
+    bool _capSaslStatusUsingExternal{false};  ///< Whether SASL support status is for SASL EXTERNAL
 
     void reset();
     bool testHasChanged();
-    QListWidgetItem *insertNetwork(NetworkId);
-    QListWidgetItem *insertNetwork(const NetworkInfo &info);
-    QListWidgetItem *networkItem(NetworkId) const;
-    void saveToNetworkInfo(NetworkInfo &);
+    QListWidgetItem* insertNetwork(NetworkId);
+    QListWidgetItem* insertNetwork(const NetworkInfo& info);
+    QListWidgetItem* networkItem(NetworkId) const;
+    void saveToNetworkInfo(NetworkInfo&);
     IdentityId defaultIdentity() const;
+
+    /**
+     * Get whether or not the displayed network's identity has SSL certs associated with it
+     *
+     * @return True if the currently displayed network has SSL certs set, otherwise false
+     */
+    bool displayedNetworkHasCertId() const;
 
     /**
      * Update the SASL settings interface according to the given SASL state
      *
-     * @param[in] saslStatus Current status of SASL support.
+     * @param saslStatus         Current status of SASL support.
+     * @param usingSASLExternal  If true, SASL support status is for SASL EXTERNAL, else SASL PLAIN
      */
-    void setSASLStatus(const CapSupportStatus saslStatus);
+    void setCapSASLStatus(const CapSupportStatus saslStatus, bool usingSASLExternal = false);
 };
-
 
 class NetworkAddDlg : public QDialog
 {
     Q_OBJECT
 
 public:
-    NetworkAddDlg(const QStringList &existing = QStringList(), QWidget *parent = 0);
+    NetworkAddDlg(QStringList existing = QStringList(), QWidget* parent = nullptr);
 
     NetworkInfo networkInfo() const;
 
@@ -189,18 +205,17 @@ private:
     QStringList existing;
 };
 
-
 class NetworkEditDlg : public QDialog
 {
     Q_OBJECT
 
 public:
-    NetworkEditDlg(const QString &old, const QStringList &existing = QStringList(), QWidget *parent = 0);
+    NetworkEditDlg(const QString& old, QStringList existing = QStringList(), QWidget* parent = nullptr);
 
     QString networkName() const;
 
 private slots:
-    void on_networkEdit_textChanged(const QString &);
+    void on_networkEdit_textChanged(const QString&);
 
 private:
     Ui::NetworkEditDlg ui;
@@ -208,13 +223,12 @@ private:
     QStringList existing;
 };
 
-
 class ServerEditDlg : public QDialog
 {
     Q_OBJECT
 
 public:
-    ServerEditDlg(const Network::Server &server = Network::Server(), QWidget *parent = 0);
+    ServerEditDlg(const Network::Server& server = Network::Server(), QWidget* parent = nullptr);
 
     Network::Server serverData() const;
 
@@ -235,13 +249,34 @@ private:
     Ui::ServerEditDlg ui;
 };
 
+class CapsEditDlg : public QDialog
+{
+    Q_OBJECT
+
+public:
+    CapsEditDlg(const QString& oldSkipCapsString, QWidget* parent = nullptr);
+
+    QString skipCapsString() const;
+
+private slots:
+    void defaultSkipCaps();
+    void on_skipCapsEdit_textChanged(const QString&);
+
+private:
+    Ui::CapsEditDlg ui;
+
+    QString oldSkipCapsString;
+};
 
 class SaveNetworksDlg : public QDialog
 {
     Q_OBJECT
 
 public:
-    SaveNetworksDlg(const QList<NetworkInfo> &toCreate, const QList<NetworkInfo> &toUpdate, const QList<NetworkId> &toRemove, QWidget *parent = 0);
+    SaveNetworksDlg(const QList<NetworkInfo>& toCreate,
+                    const QList<NetworkInfo>& toUpdate,
+                    const QList<NetworkId>& toRemove,
+                    QWidget* parent = nullptr);
 
 private slots:
     void clientEvent();
@@ -251,6 +286,5 @@ private:
 
     int numevents, rcvevents;
 };
-
 
 #endif

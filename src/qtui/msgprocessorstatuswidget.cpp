@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -20,13 +20,12 @@
 
 #include "msgprocessorstatuswidget.h"
 
-MsgProcessorStatusWidget::MsgProcessorStatusWidget(QWidget *parent)
+MsgProcessorStatusWidget::MsgProcessorStatusWidget(QWidget* parent)
     : QWidget(parent)
 {
     ui.setupUi(this);
     hide();
 }
-
 
 void MsgProcessorStatusWidget::setProgress(int value, int max)
 {

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -22,31 +22,30 @@
 
 #include <algorithm>
 
+#include "buffermodel.h"
 #include "buffersettings.h"
 #include "client.h"
-#include "buffermodel.h"
+#include "clientignorelistmanager.h"
 #include "messagemodel.h"
 #include "networkmodel.h"
-#include "clientignorelistmanager.h"
+#include "util.h"
 
-MessageFilter::MessageFilter(QAbstractItemModel *source, QObject *parent)
-    : QSortFilterProxyModel(parent),
-    _messageTypeFilter(0)
+MessageFilter::MessageFilter(QAbstractItemModel* source, QObject* parent)
+    : QSortFilterProxyModel(parent)
+    , _messageTypeFilter(0)
 {
     init();
     setSourceModel(source);
 }
 
-
-MessageFilter::MessageFilter(MessageModel *source, const QList<BufferId> &buffers, QObject *parent)
-    : QSortFilterProxyModel(parent),
-    _validBuffers(buffers.toSet()),
-    _messageTypeFilter(0)
+MessageFilter::MessageFilter(MessageModel* source, const QList<BufferId>& buffers, QObject* parent)
+    : QSortFilterProxyModel(parent)
+    , _validBuffers(toQSet(buffers))
+    , _messageTypeFilter(0)
 {
     init();
     setSourceModel(source);
 }
-
 
 void MessageFilter::init()
 {
@@ -55,21 +54,20 @@ void MessageFilter::init()
     _userNoticesTarget = _serverNoticesTarget = _errorMsgsTarget = -1;
 
     BufferSettings defaultSettings;
-    defaultSettings.notify("UserNoticesTarget", this, SLOT(messageRedirectionChanged()));
-    defaultSettings.notify("ServerNoticesTarget", this, SLOT(messageRedirectionChanged()));
-    defaultSettings.notify("ErrorMsgsTarget", this, SLOT(messageRedirectionChanged()));
+    defaultSettings.notify("UserNoticesTarget", this, &MessageFilter::messageRedirectionChanged);
+    defaultSettings.notify("ServerNoticesTarget", this, &MessageFilter::messageRedirectionChanged);
+    defaultSettings.notify("ErrorMsgsTarget", this, &MessageFilter::messageRedirectionChanged);
     messageRedirectionChanged();
 
     _messageTypeFilter = defaultSettings.messageFilter();
-    defaultSettings.notify("MessageTypeFilter", this, SLOT(messageTypeFilterChanged()));
+    defaultSettings.notify("MessageTypeFilter", this, &MessageFilter::messageTypeFilterChanged);
 
     BufferSettings mySettings(MessageFilter::idString());
     if (mySettings.hasFilter())
         _messageTypeFilter = mySettings.messageFilter();
-    mySettings.notify("MessageTypeFilter", this, SLOT(messageTypeFilterChanged()));
-    mySettings.notify("hasMessageTypeFilter", this, SLOT(messageTypeFilterChanged()));
+    mySettings.notify("MessageTypeFilter", this, &MessageFilter::messageTypeFilterChanged);
+    mySettings.notify("hasMessageTypeFilter", this, &MessageFilter::messageTypeFilterChanged);
 }
-
 
 void MessageFilter::messageTypeFilterChanged()
 {
@@ -87,7 +85,6 @@ void MessageFilter::messageTypeFilterChanged()
         invalidateFilter();
     }
 }
-
 
 void MessageFilter::messageRedirectionChanged()
 {
@@ -113,24 +110,22 @@ void MessageFilter::messageRedirectionChanged()
         invalidateFilter();
 }
 
-
 QString MessageFilter::idString() const
 {
     if (_validBuffers.isEmpty())
         return "*";
 
-    QList<BufferId> bufferIds = _validBuffers.toList();
-    qSort(bufferIds);
+    QList<BufferId> bufferIds = _validBuffers.values();
+    std::sort(bufferIds.begin(), bufferIds.end());
 
     QStringList bufferIdStrings;
-    foreach(BufferId id, bufferIds)
-    bufferIdStrings << QString::number(id.toInt());
+    foreach (BufferId id, bufferIds)
+        bufferIdStrings << QString::number(id.toInt());
 
     return bufferIdStrings.join("|");
 }
 
-
-bool MessageFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+bool MessageFilter::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const
 {
     Q_UNUSED(sourceParent);
     QModelIndex sourceIdx = sourceModel()->index(sourceRow, 2);
@@ -159,7 +154,8 @@ bool MessageFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourcePar
     // ignorelist handling
     // only match if message is not flagged as server msg
     if (!(flags & Message::ServerMsg) && Client::ignoreListManager()
-        && Client::ignoreListManager()->match(sourceIdx.data(MessageModel::MessageRole).value<Message>(), Client::networkModel()->networkName(bufferId)))
+        && Client::ignoreListManager()->match(sourceIdx.data(MessageModel::MessageRole).value<Message>(),
+                                              Client::networkModel()->networkName(bufferId)))
         return false;
 
     if (flags & Message::Redirected) {
@@ -189,9 +185,9 @@ bool MessageFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourcePar
         if (redirectionTarget & BufferSettings::CurrentBuffer && !(flags & Message::Backlog)) {
             BufferId redirectedTo = sourceModel()->data(sourceIdx, MessageModel::RedirectedToRole).value<BufferId>();
             if (!redirectedTo.isValid()) {
-                BufferId redirectedTo = Client::bufferModel()->currentIndex().data(NetworkModel::BufferIdRole).value<BufferId>();
+                redirectedTo = Client::bufferModel()->currentIndex().data(NetworkModel::BufferIdRole).value<BufferId>();
                 if (redirectedTo.isValid())
-                    sourceModel()->setData(sourceIdx, QVariant::fromValue<BufferId>(redirectedTo), MessageModel::RedirectedToRole);
+                    sourceModel()->setData(sourceIdx, QVariant::fromValue(redirectedTo), MessageModel::RedirectedToRole);
             }
 
             if (_validBuffers.contains(redirectedTo))
@@ -224,10 +220,8 @@ bool MessageFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourcePar
             return false;
 
         // Extract timestamp and nickname from the new quit message
-        qint64 messageTimestamp = sourceModel()->data(sourceIdx, MessageModel::TimestampRole)
-                .value<QDateTime>().toMSecsSinceEpoch();
-        QString quiter = nickFromMask(sourceModel()->data(sourceIdx, MessageModel::MessageRole)
-                                      .value<Message>().sender()).toLower();
+        qint64 messageTimestamp = sourceModel()->data(sourceIdx, MessageModel::TimestampRole).value<QDateTime>().toMSecsSinceEpoch();
+        QString quiter = nickFromMask(sourceModel()->data(sourceIdx, MessageModel::MessageRole).value<Message>().sender()).toLower();
 
         // Check that nickname matches query name
         if (quiter != bufferName().toLower())
@@ -236,21 +230,20 @@ bool MessageFilter::filterAcceptsRow(int sourceRow, const QModelIndex &sourcePar
         // Check if a quit message was already forwarded within +/- 1000 ms
         static constexpr qint64 MAX_QUIT_DELTA_MS = 1 * 1000;
         // No need to check if it's the appropriate buffer, each query has a unique message filter
-        if (std::binary_search(_filteredQuitMsgTime.begin(), _filteredQuitMsgTime.end(),
-                               messageTimestamp,
-                               [](qint64 a, qint64 b) { return ((a + MAX_QUIT_DELTA_MS) < b); } )) {
+        if (std::binary_search(_filteredQuitMsgTime.begin(), _filteredQuitMsgTime.end(), messageTimestamp, [](qint64 a, qint64 b) {
+                return ((a + MAX_QUIT_DELTA_MS) < b);
+            })) {
             // New element is less than if at least 1000 ms older/newer
             // Match found, no need to forward another quit message
             return false;
         }
 
         // Mark query as having a quit message inserted
-        MessageFilter *that = const_cast<MessageFilter *>(this);
+        auto* that = const_cast<MessageFilter*>(this);
         that->_filteredQuitMsgTime.insert(messageTimestamp);
         return true;
     }
 }
-
 
 void MessageFilter::requestBacklog()
 {

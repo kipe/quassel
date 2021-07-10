@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -28,9 +28,9 @@
 /******************************************************************************************
  * NickViewFilter
  ******************************************************************************************/
-NickViewFilter::NickViewFilter(const BufferId &bufferId, NetworkModel *parent)
-    : QSortFilterProxyModel(parent),
-    _bufferId(bufferId)
+NickViewFilter::NickViewFilter(const BufferId& bufferId, NetworkModel* parent)
+    : QSortFilterProxyModel(parent)
+    , _bufferId(bufferId)
 {
     setSourceModel(parent);
     setDynamicSortFilter(true);
@@ -38,19 +38,17 @@ NickViewFilter::NickViewFilter(const BufferId &bufferId, NetworkModel *parent)
     setSortRole(TreeModel::SortRole);
 }
 
-
-bool NickViewFilter::filterAcceptsRow(int source_row, const QModelIndex &source_parent) const
+bool NickViewFilter::filterAcceptsRow(int source_row, const QModelIndex& source_parent) const
 {
     // root node, networkindexes, the bufferindex of the buffer this filter is active for and it's children are accepted
-    if (!source_parent.isValid())
+    if (!(source_parent.isValid() && source_parent.model()))
         return true;
 
-    QModelIndex source_child = source_parent.child(source_row, 0);
+    QModelIndex source_child = source_parent.model()->index(source_row, 0, source_parent);
     return (sourceModel()->data(source_child, NetworkModel::BufferIdRole).value<BufferId>() == _bufferId);
 }
 
-
-QVariant NickViewFilter::data(const QModelIndex &index, int role) const
+QVariant NickViewFilter::data(const QModelIndex& index, int role) const
 {
     switch (role) {
     case Qt::FontRole:

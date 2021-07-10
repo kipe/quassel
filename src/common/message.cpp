@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2005-2018 by the Quassel Project                        *
+ *   Copyright (C) 2005-2020 by the Quassel Project                        *
  *   devel@quassel-irc.org                                                 *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
@@ -18,57 +18,66 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.         *
  ***************************************************************************/
 
-#include "message.h"
-
-#include "util.h"
-#include "peer.h"
-#include "signalproxy.h"
+#include <utility>
 
 #include <QDataStream>
 
-Message::Message(const BufferInfo &bufferInfo, Type type, const QString &contents, const QString &sender,
-                 const QString &senderPrefixes, const QString &realName, const QString &avatarUrl, Flags flags)
-    : _timestamp(QDateTime::currentDateTime().toUTC()),
-    _bufferInfo(bufferInfo),
-    _contents(contents),
-    _sender(sender),
-    _senderPrefixes(senderPrefixes),
-    _realName(realName),
-    _avatarUrl(avatarUrl),
-    _type(type),
-    _flags(flags)
-{
-}
+#include "message.h"
+#include "peer.h"
+#include "signalproxy.h"
+#include "util.h"
 
+Message::Message(BufferInfo bufferInfo,
+                 Type type,
+                 QString contents,
+                 QString sender,
+                 QString senderPrefixes,
+                 QString realName,
+                 QString avatarUrl,
+                 Flags flags)
+    : _timestamp(QDateTime::currentDateTime().toUTC())
+    , _bufferInfo(std::move(bufferInfo))
+    , _contents(std::move(contents))
+    , _sender(std::move(sender))
+    , _senderPrefixes(std::move(senderPrefixes))
+    , _realName(std::move(realName))
+    , _avatarUrl(std::move(avatarUrl))
+    , _type(type)
+    , _flags(flags)
+{}
 
-Message::Message(const QDateTime &ts, const BufferInfo &bufferInfo, Type type, const QString &contents,
-                 const QString &sender, const QString &senderPrefixes, const QString &realName,
-                 const QString &avatarUrl, Flags flags)
-    : _timestamp(ts),
-    _bufferInfo(bufferInfo),
-    _contents(contents),
-    _sender(sender),
-    _senderPrefixes(senderPrefixes),
-    _realName(realName),
-    _avatarUrl(avatarUrl),
-    _type(type),
-    _flags(flags)
-{
-}
+Message::Message(QDateTime ts,
+                 BufferInfo bufferInfo,
+                 Type type,
+                 QString contents,
+                 QString sender,
+                 QString senderPrefixes,
+                 QString realName,
+                 QString avatarUrl,
+                 Flags flags)
+    : _timestamp(std::move(ts))
+    , _bufferInfo(std::move(bufferInfo))
+    , _contents(std::move(contents))
+    , _sender(std::move(sender))
+    , _senderPrefixes(std::move(senderPrefixes))
+    , _realName(std::move(realName))
+    , _avatarUrl(std::move(avatarUrl))
+    , _type(type)
+    , _flags(flags)
+{}
 
-
-QDataStream &operator<<(QDataStream &out, const Message &msg)
+QDataStream& operator<<(QDataStream& out, const Message& msg)
 {
     Q_ASSERT(SignalProxy::current());
     Q_ASSERT(SignalProxy::current()->targetPeer());
 
-    // We do not serialize the sender prefixes until we have a new protocol or client-features implemented
     out << msg.msgId();
 
     if (SignalProxy::current()->targetPeer()->hasFeature(Quassel::Feature::LongTime)) {
         // toMSecs returns a qint64, signed rather than unsigned
         out << (qint64) msg.timestamp().toMSecsSinceEpoch();
-    } else {
+    }
+    else {
         out << (quint32) msg.timestamp().toTime_t();
     }
 
@@ -89,8 +98,7 @@ QDataStream &operator<<(QDataStream &out, const Message &msg)
     return out;
 }
 
-
-QDataStream &operator>>(QDataStream &in, Message &msg)
+QDataStream& operator>>(QDataStream& in, Message& msg)
 {
     Q_ASSERT(SignalProxy::current());
     Q_ASSERT(SignalProxy::current()->sourcePeer());
@@ -102,7 +110,8 @@ QDataStream &operator>>(QDataStream &in, Message &msg)
         qint64 timeStamp;
         in >> timeStamp;
         msg._timestamp = QDateTime::fromMSecsSinceEpoch(timeStamp);
-    } else {
+    }
+    else {
         quint32 timeStamp;
         in >> timeStamp;
         msg._timestamp = QDateTime::fromTime_t(timeStamp);
@@ -143,15 +152,16 @@ QDataStream &operator>>(QDataStream &in, Message &msg)
     return in;
 }
 
-
-QDebug operator<<(QDebug dbg, const Message &msg)
+QDebug operator<<(QDebug dbg, const Message& msg)
 {
     dbg.nospace() << qPrintable(QString("Message(MsgId:")) << msg.msgId()
-    << qPrintable(QString(",")) << msg.timestamp()
-    << qPrintable(QString(", Type:")) << msg.type()
-    << qPrintable(QString(", RealName:")) << msg.realName()
-    << qPrintable(QString(", AvatarURL:")) << msg.avatarUrl()
-    << qPrintable(QString(", Flags:")) << msg.flags() << qPrintable(QString(")"))
-    << msg.senderPrefixes() << msg.sender() << ":" << msg.contents();
+                  << qPrintable(QString(",")) << msg.timestamp()
+                  << qPrintable(QString(", Type:")) << msg.type()
+                  << qPrintable(QString(", RealName:")) << msg.realName()
+                  << qPrintable(QString(", AvatarURL:")) << msg.avatarUrl()
+                  << qPrintable(QString(", Flags:")) << msg.flags()
+                  << qPrintable(QString(")"))
+                  << msg.senderPrefixes() << msg.sender() << ":"
+                  << msg.contents();
     return dbg;
 }
